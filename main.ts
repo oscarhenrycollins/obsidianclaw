@@ -709,10 +709,16 @@ class OpenClawChatView extends ItemView {
         .map((c: any) => c.text)
         .join("\n");
     }
-    // Strip gateway metadata prefixes (e.g. "Conversation info (untrusted metadata):\n```json\n{...}\n```\n\n")
-    text = text.replace(/^Conversation info \(untrusted metadata\):[\s\S]*?```\s*/m, "").trim();
+    // Strip gateway metadata blocks (Conversation info + JSON code block)
+    text = text.replace(/Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g, "").trim();
+    // Strip any remaining standalone metadata JSON blocks
+    text = text.replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, "").trim();
     // Strip timestamp prefixes like "[Sun 2026-02-22 21:58 GMT+7] "
-    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/m, "").trim();
+    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, "").trim();
+    // Strip media attachment lines
+    text = text.replace(/^\[media attached:.*?\]\s*/gm, "").trim();
+    // Strip "To send an image back..." instruction lines
+    text = text.replace(/^To send an image back.*$/gm, "").trim();
     // Strip "NO_REPLY" responses
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
