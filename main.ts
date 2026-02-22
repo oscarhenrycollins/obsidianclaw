@@ -1,5 +1,6 @@
 import {
   App,
+  FuzzySuggestModal,
   ItemView,
   MarkdownRenderer,
   Modal,
@@ -7,6 +8,7 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  TFile,
   WorkspaceLeaf,
 } from "obsidian";
 
@@ -603,6 +605,8 @@ class OpenClawChatView extends ItemView {
   private streamRunId: string | null = null;
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
+  private attachPreviewEl!: HTMLElement;
+  private pendingAttachment: { name: string; content: string } | null = null;
   private sending = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
@@ -648,10 +652,17 @@ class OpenClawChatView extends ItemView {
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
     this.statusEl = inputRow.createSpan("openclaw-status-dot");
+    // Attach button
+    const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
+    attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
+    attachBtn.addEventListener("click", () => this.pickAttachment());
     this.inputEl = inputRow.createEl("textarea", {
       cls: "openclaw-input",
       attr: { placeholder: "Message...", rows: "1" },
     });
+    // Attachment preview (hidden by default)
+    this.attachPreviewEl = inputArea.createDiv("openclaw-attach-preview");
+    this.attachPreviewEl.style.display = "none";
     this.abortBtn = inputRow.createEl("button", { cls: "openclaw-abort-btn", attr: { "aria-label": "Stop" } });
     this.abortBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
     this.abortBtn.style.display = "none";
@@ -738,8 +749,9 @@ class OpenClawChatView extends ItemView {
   }
 
   async sendMessage(): Promise<void> {
-    const text = this.inputEl.value.trim();
-    if (!text || this.sending) return;
+    let text = this.inputEl.value.trim();
+    if (!text && !this.pendingAttachment) return;
+    if (this.sending) return;
     if (!this.plugin.gateway?.connected) {
       new Notice("Not connected to OpenClaw gateway");
       return;
@@ -750,7 +762,17 @@ class OpenClawChatView extends ItemView {
     this.inputEl.value = "";
     this.autoResize();
 
-    this.messages.push({ role: "user", text, timestamp: Date.now() });
+    // Append attachment content to message
+    let fullMessage = text;
+    const displayText = text;
+    if (this.pendingAttachment) {
+      fullMessage = (text ? text + "\n\n" : "") + this.pendingAttachment.content;
+      if (!text) text = `📎 ${this.pendingAttachment.name}`;
+      this.pendingAttachment = null;
+      this.attachPreviewEl.style.display = "none";
+    }
+
+    this.messages.push({ role: "user", text: displayText || text, timestamp: Date.now() });
     await this.renderMessages();
 
     const runId = generateId();
@@ -763,7 +785,7 @@ class OpenClawChatView extends ItemView {
     try {
       await this.plugin.gateway.request("chat.send", {
         sessionKey: this.plugin.settings.sessionKey,
-        message: text,
+        message: fullMessage,
         deliver: false,
         idempotencyKey: runId,
       });
@@ -789,6 +811,53 @@ class OpenClawChatView extends ItemView {
     } catch {
       // ignore
     }
+  }
+
+  async pickAttachment(): Promise<void> {
+    // Use Obsidian's fuzzy suggest modal to pick a vault file
+    const files = this.app.vault.getFiles();
+    const modal = new AttachmentModal(this.app, files, async (file) => {
+      try {
+        const ext = file.extension.toLowerCase();
+        const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
+        const isText = ["md", "txt", "json", "csv", "yaml", "yml", "js", "ts", "py", "html", "css", "xml", "toml", "ini", "sh", "bash", "zsh", "log"].includes(ext);
+
+        if (isImage) {
+          // For images: read as base64 and reference the vault path
+          this.pendingAttachment = {
+            name: file.name,
+            content: `[Attached image: ${file.path}]`,
+          };
+        } else if (isText) {
+          // For text files: read content
+          const content = await this.app.vault.cachedRead(file);
+          const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n...(truncated)" : content;
+          this.pendingAttachment = {
+            name: file.name,
+            content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
+          };
+        } else {
+          // Binary/unknown: just reference
+          this.pendingAttachment = {
+            name: file.name,
+            content: `[Attached file: ${file.path}]`,
+          };
+        }
+
+        // Show preview
+        this.attachPreviewEl.empty();
+        this.attachPreviewEl.style.display = "flex";
+        const nameEl = this.attachPreviewEl.createSpan({ text: `📎 ${file.name}`, cls: "openclaw-attach-name" });
+        const removeBtn = this.attachPreviewEl.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
+        removeBtn.addEventListener("click", () => {
+          this.pendingAttachment = null;
+          this.attachPreviewEl.style.display = "none";
+        });
+      } catch {
+        new Notice("Failed to read file");
+      }
+    });
+    modal.open();
   }
 
   handleChatEvent(payload: any): void {
@@ -1032,6 +1101,32 @@ export default class OpenClawPlugin extends Plugin {
       inputEl.value = message;
       inputEl.focus();
     }
+  }
+}
+
+// ─── Attachment Picker ───────────────────────────────────────────────
+
+class AttachmentModal extends FuzzySuggestModal<TFile> {
+  private files: TFile[];
+  private onChoose: (file: TFile) => void;
+
+  constructor(app: App, files: TFile[], onChoose: (file: TFile) => void) {
+    super(app);
+    this.files = files;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search files to attach...");
+  }
+
+  getItems(): TFile[] {
+    return this.files;
+  }
+
+  getItemText(file: TFile): string {
+    return file.path;
+  }
+
+  onChooseItem(file: TFile): void {
+    this.onChoose(file);
   }
 }
 
