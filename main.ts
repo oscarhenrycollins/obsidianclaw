@@ -17,6 +17,9 @@ interface OpenClawSettings {
   token: string;
   sessionKey: string;
   onboardingComplete: boolean;
+  deviceId?: string;
+  devicePublicKey?: string;
+  devicePrivateKey?: string;
 }
 
 const DEFAULT_SETTINGS: OpenClawSettings = {
@@ -25,6 +28,112 @@ const DEFAULT_SETTINGS: OpenClawSettings = {
   sessionKey: "main",
   onboardingComplete: false,
 };
+
+// ─── Device Identity (Ed25519) ───────────────────────────────────────
+
+function toBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64Url(s: string): Uint8Array {
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", data.buffer);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+interface DeviceIdentity {
+  deviceId: string;
+  publicKey: string;
+  privateKey: string;
+  cryptoKey: CryptoKey;
+}
+
+async function getOrCreateDeviceIdentity(
+  loadData: () => Promise<any>,
+  saveData: (data: any) => Promise<void>
+): Promise<DeviceIdentity> {
+  const data = await loadData();
+  if (data?.deviceId && data?.devicePublicKey && data?.devicePrivateKey) {
+    // Restore existing identity
+    const privBytes = fromBase64Url(data.devicePrivateKey);
+    const cryptoKey = await crypto.subtle.importKey(
+      "pkcs8",
+      privBytes,
+      { name: "Ed25519" },
+      false,
+      ["sign"]
+    );
+    return {
+      deviceId: data.deviceId,
+      publicKey: data.devicePublicKey,
+      privateKey: data.devicePrivateKey,
+      cryptoKey,
+    };
+  }
+
+  // Generate new Ed25519 keypair
+  const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+  const pubRaw = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
+  const privPkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
+  const deviceId = await sha256Hex(pubRaw);
+  const publicKey = toBase64Url(pubRaw);
+  const privateKey = toBase64Url(privPkcs8);
+
+  // Save to plugin data
+  const existing = (await loadData()) || {};
+  existing.deviceId = deviceId;
+  existing.devicePublicKey = publicKey;
+  existing.devicePrivateKey = privateKey;
+  await saveData(existing);
+
+  return { deviceId, publicKey, privateKey, cryptoKey: keyPair.privateKey };
+}
+
+async function signDevicePayload(identity: DeviceIdentity, payload: string): Promise<string> {
+  const encoded = new TextEncoder().encode(payload);
+  let cryptoKey = identity.cryptoKey;
+  // If cryptoKey doesn't have sign usage, re-import
+  if (!cryptoKey) {
+    const privBytes = fromBase64Url(identity.privateKey);
+    cryptoKey = await crypto.subtle.importKey("pkcs8", privBytes, { name: "Ed25519" }, false, ["sign"]);
+  }
+  const sig = await crypto.subtle.sign("Ed25519", cryptoKey, encoded);
+  return toBase64Url(new Uint8Array(sig));
+}
+
+function buildSignaturePayload(params: {
+  deviceId: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: string[];
+  signedAtMs: number;
+  token: string | null;
+  nonce: string | null;
+}): string {
+  const version = params.nonce ? "v2" : "v1";
+  const parts = [
+    version,
+    params.deviceId,
+    params.clientId,
+    params.clientMode,
+    params.role,
+    params.scopes.join(","),
+    String(params.signedAtMs),
+    params.token ?? "",
+  ];
+  if (version === "v2") parts.push(params.nonce ?? "");
+  return parts.join("|");
+}
 
 // ─── Gateway Client ──────────────────────────────────────────────────
 
@@ -35,6 +144,7 @@ type GatewayCloseHandler = (info: { code: number; reason: string }) => void;
 interface GatewayClientOpts {
   url: string;
   token?: string;
+  deviceIdentity?: DeviceIdentity;
   onEvent?: GatewayEventHandler;
   onHello?: GatewayHelloHandler;
   onClose?: GatewayCloseHandler;
@@ -149,7 +259,7 @@ class GatewayClient {
     this.connectTimer = setTimeout(() => this.sendConnect(), 750);
   }
 
-  private sendConnect(): void {
+  private async sendConnect(): Promise<void> {
     if (this.connectSent) return;
     this.connectSent = true;
     if (this.connectTimer !== null) {
@@ -157,19 +267,56 @@ class GatewayClient {
       this.connectTimer = null;
     }
 
+    const CLIENT_ID = "gateway-client";
+    const CLIENT_MODE = "ui";
+    const ROLE = "operator";
+    const SCOPES = ["operator.admin", "operator.write", "operator.read"];
+
     const auth = this.opts.token ? { token: this.opts.token } : undefined;
+
+    // Build device fingerprint if identity is available
+    let device: any = undefined;
+    const identity = this.opts.deviceIdentity;
+    if (identity) {
+      try {
+        const signedAtMs = Date.now();
+        const nonce = this.connectNonce ?? null;
+        const payload = buildSignaturePayload({
+          deviceId: identity.deviceId,
+          clientId: CLIENT_ID,
+          clientMode: CLIENT_MODE,
+          role: ROLE,
+          scopes: SCOPES,
+          signedAtMs,
+          token: this.opts.token ?? null,
+          nonce,
+        });
+        const signature = await signDevicePayload(identity, payload);
+        device = {
+          id: identity.deviceId,
+          publicKey: identity.publicKey,
+          signature,
+          signedAt: signedAtMs,
+          nonce: nonce ?? undefined,
+        };
+      } catch (e) {
+        console.error("[ObsidianClaw] Device signing failed:", e);
+      }
+    }
+
     const params = {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "obsidianclaw",
+        id: CLIENT_ID,
         version: "0.1.0",
         platform: "obsidian",
-        mode: "webchat",
+        mode: CLIENT_MODE,
       },
-      role: "operator",
-      scopes: ["operator.admin"],
+      role: ROLE,
+      scopes: SCOPES,
       auth,
+      device,
       caps: [],
     };
 
@@ -538,12 +685,13 @@ class OpenClawChatView extends ItemView {
       });
       if (result?.messages && Array.isArray(result.messages)) {
         this.messages = result.messages
+          .filter((m: any) => m.role === "user" || m.role === "assistant")
           .map((m: any) => ({
             role: m.role as "user" | "assistant",
             text: this.extractText(m.content),
             timestamp: m.timestamp ?? Date.now(),
           }))
-          .filter((m: ChatMessage) => m.text.trim());
+          .filter((m: ChatMessage) => m.text.trim() && !m.text.startsWith("HEARTBEAT"));
         await this.renderMessages();
       }
     } catch (e) {
@@ -615,7 +763,10 @@ class OpenClawChatView extends ItemView {
   }
 
   handleChatEvent(payload: any): void {
-    if (payload.sessionKey !== this.plugin.settings.sessionKey) return;
+    // Session key "main" resolves to "agent:main:main" on the gateway
+    const sk = this.plugin.settings.sessionKey;
+    const payloadSk = payload.sessionKey ?? "";
+    if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
     if (payload.state === "delta") {
       const text = this.extractText(payload.message);
@@ -759,7 +910,7 @@ export default class OpenClawPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  connectGateway(): void {
+  async connectGateway(): Promise<void> {
     this.gateway?.stop();
     this.gatewayConnected = false;
     this.chatView?.updateStatus();
@@ -773,17 +924,33 @@ export default class OpenClawPlugin extends Plugin {
       return;
     }
 
+    // Get or create device identity for scope authorization
+    let deviceIdentity: DeviceIdentity | undefined;
+    try {
+      deviceIdentity = await getOrCreateDeviceIdentity(
+        () => this.loadData(),
+        (data) => this.saveData(data)
+      );
+    } catch (e) {
+      console.warn("[ObsidianClaw] Device identity creation failed, connecting without scopes:", e);
+    }
+
     this.gateway = new GatewayClient({
       url,
       token: this.settings.token.trim() || undefined,
+      deviceIdentity,
       onHello: () => {
         this.gatewayConnected = true;
         this.chatView?.updateStatus();
         this.chatView?.loadHistory();
       },
-      onClose: () => {
+      onClose: (info) => {
         this.gatewayConnected = false;
         this.chatView?.updateStatus();
+        // Show pairing instructions if needed
+        if (info.reason.includes("pairing required") || info.reason.includes("device identity required")) {
+          new Notice("OpenClaw: Device pairing required. Run 'openclaw devices approve' on your gateway machine.", 10000);
+        }
       },
       onEvent: (evt) => {
         if (evt.event === "chat") {
