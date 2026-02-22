@@ -602,6 +602,7 @@ class OpenClawChatView extends ItemView {
   private streamText: string | null = null;
   private streamRunId: string | null = null;
   private streamEl: HTMLElement | null = null;
+  private typingEl!: HTMLElement;
   private sending = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
@@ -634,16 +635,28 @@ class OpenClawChatView extends ItemView {
     // Messages area
     this.messagesEl = container.createDiv("openclaw-messages");
 
+    // Typing indicator (hidden by default)
+    this.typingEl = container.createDiv("openclaw-typing");
+    this.typingEl.style.display = "none";
+    const typingDots = this.typingEl.createDiv("openclaw-typing-inner");
+    typingDots.createSpan({ text: "Thinking", cls: "openclaw-typing-text" });
+    const dotsEl = typingDots.createSpan("openclaw-typing-dots");
+    dotsEl.createSpan("openclaw-dot");
+    dotsEl.createSpan("openclaw-dot");
+    dotsEl.createSpan("openclaw-dot");
+
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
-    this.inputEl = inputArea.createEl("textarea", {
+    const inputRow = inputArea.createDiv("openclaw-input-row");
+    this.inputEl = inputRow.createEl("textarea", {
       cls: "openclaw-input",
-      attr: { placeholder: "Message your AI...", rows: "1" },
+      attr: { placeholder: "Message...", rows: "1" },
     });
-    const btnGroup = inputArea.createDiv("openclaw-btn-group");
-    this.abortBtn = btnGroup.createEl("button", { text: "Stop", cls: "openclaw-abort-btn" });
+    this.abortBtn = inputRow.createEl("button", { cls: "openclaw-abort-btn", attr: { "aria-label": "Stop" } });
+    this.abortBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
     this.abortBtn.style.display = "none";
-    this.sendBtn = btnGroup.createEl("button", { text: "Send", cls: "openclaw-send-btn" });
+    this.sendBtn = inputRow.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
+    this.sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 
     // Events
     this.inputEl.addEventListener("keydown", (e) => {
@@ -744,6 +757,8 @@ class OpenClawChatView extends ItemView {
     this.streamRunId = runId;
     this.streamText = "";
     this.abortBtn.style.display = "";
+    this.typingEl.style.display = "";
+    this.scrollToBottom();
 
     try {
       await this.plugin.gateway.request("chat.send", {
@@ -783,6 +798,7 @@ class OpenClawChatView extends ItemView {
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
     if (payload.state === "delta") {
+      this.typingEl.style.display = "none";
       const text = this.extractText(payload.message);
       if (typeof text === "string") {
         this.streamText = text;
@@ -813,6 +829,7 @@ class OpenClawChatView extends ItemView {
     this.streamText = null;
     this.streamEl = null;
     this.abortBtn.style.display = "none";
+    this.typingEl.style.display = "none";
   }
 
   private updateStreamBubble(): void {

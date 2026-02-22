@@ -1,399 +1,310 @@
-/* ObsidianClaw — Chat Sidebar + Onboarding Styles */
+/* ObsidianClaw — Modern Chat UI */
 
-/* ─── Onboarding Modal ─── */
-
-.openclaw-onboarding .modal-content {
-  max-width: 520px;
-  padding: 8px;
-}
-
-.openclaw-onboarding h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-.openclaw-onboarding h3 {
-  margin: 16px 0 8px;
-  font-size: 14px;
-}
-
-.openclaw-onboard-desc {
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-
-.openclaw-onboard-list {
-  padding-left: 20px;
-  margin: 8px 0 16px;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.7;
-}
-
-.openclaw-onboard-list li {
-  margin-bottom: 4px;
-}
-
-.openclaw-onboard-info {
-  background: var(--background-secondary);
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-bottom: 20px;
-}
-
-.openclaw-onboard-field {
-  margin-bottom: 16px;
-}
-
-.openclaw-onboard-field label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: var(--text-normal);
-}
-
-.openclaw-onboard-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: var(--font-monospace);
-  background: var(--background-primary);
-  color: var(--text-normal);
-}
-
-.openclaw-onboard-input:focus {
-  outline: none;
-  border-color: var(--interactive-accent);
-}
-
-.openclaw-onboard-hint {
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-top: 4px;
-}
-
-.openclaw-onboard-security {
-  background: var(--background-secondary);
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 16px 0;
-  line-height: 1.6;
-}
-
-.openclaw-onboard-security p {
-  margin: 4px 0 0;
-}
-
-.openclaw-onboard-status {
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  margin: 12px 0;
-  min-height: 20px;
-}
-
-.openclaw-onboard-status:empty {
-  display: none;
-}
-
-.openclaw-onboard-status-info {
-  background: var(--background-secondary);
-  color: var(--text-muted);
-}
-
-.openclaw-onboard-status-success {
-  background: rgba(16, 185, 129, 0.1);
-  color: var(--color-green);
-}
-
-.openclaw-onboard-status-error {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--color-red);
-}
-
-.openclaw-onboard-buttons {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 20px;
-}
-
-.openclaw-onboard-tips {
-  background: var(--background-secondary);
-  padding: 16px;
-  border-radius: 8px;
-  margin: 16px 0;
-}
-
-.openclaw-onboard-tips h3 {
-  margin: 0 0 8px;
-}
-
-/* ─── Chat Sidebar ─── */
-
+/* Container: fill all available space */
 .openclaw-chat-container {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Header */
+/* Header: compact, clean */
 .openclaw-chat-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--background-modifier-border);
   flex-shrink: 0;
-}
-
-.openclaw-header-title {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-normal);
 }
 
 .openclaw-status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: var(--text-faint);
   flex-shrink: 0;
-  transition: background-color 0.2s;
+  transition: background 0.3s;
 }
 
 .openclaw-status-dot.connected {
-  background-color: var(--color-green);
+  background: #4caf50;
 }
 
-.openclaw-status-dot.disconnected {
-  background-color: var(--color-red);
+.openclaw-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-normal);
 }
 
-/* Messages */
+/* Messages area: fill remaining space */
 .openclaw-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  overflow-x: hidden;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
 }
 
+/* Message bubbles */
 .openclaw-msg {
   max-width: 85%;
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.6;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  animation: msgIn 0.15s ease-out;
 }
 
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* User messages: right-aligned, accent color */
 .openclaw-msg-user {
   align-self: flex-end;
-  background-color: var(--interactive-accent);
+  background: var(--interactive-accent);
   color: var(--text-on-accent);
   border-bottom-right-radius: 4px;
 }
 
+.openclaw-msg-user .openclaw-msg-text {
+  color: var(--text-on-accent);
+}
+
+/* Assistant messages: left-aligned, subtle background */
 .openclaw-msg-assistant {
   align-self: flex-start;
-  background-color: var(--background-secondary);
+  background: var(--background-secondary);
   color: var(--text-normal);
   border-bottom-left-radius: 4px;
 }
 
-.openclaw-msg-assistant p {
-  margin: 0 0 8px 0;
+/* Streaming message pulse */
+.openclaw-streaming {
+  opacity: 0.95;
 }
 
+/* Markdown inside assistant messages */
+.openclaw-msg-assistant p {
+  margin: 0 0 6px;
+}
 .openclaw-msg-assistant p:last-child {
   margin-bottom: 0;
 }
-
+.openclaw-msg-assistant ul,
+.openclaw-msg-assistant ol {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.openclaw-msg-assistant li {
+  margin-bottom: 2px;
+}
+.openclaw-msg-assistant h1,
+.openclaw-msg-assistant h2,
+.openclaw-msg-assistant h3 {
+  margin: 6px 0 3px;
+  font-size: 14px;
+  font-weight: 600;
+}
 .openclaw-msg-assistant code {
   font-size: 12px;
-  background-color: var(--background-primary);
+  background: var(--background-primary);
   padding: 1px 4px;
   border-radius: 3px;
 }
-
 .openclaw-msg-assistant pre {
-  background-color: var(--background-primary);
-  padding: 10px 12px;
-  border-radius: 6px;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--background-primary);
   overflow-x: auto;
-  margin: 8px 0;
+  font-size: 12px;
+}
+.openclaw-msg-assistant a {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+}
+.openclaw-msg-assistant blockquote {
+  border-left: 2px solid var(--interactive-accent);
+  padding-left: 10px;
+  margin: 4px 0;
+  color: var(--text-muted);
 }
 
-.openclaw-msg-assistant pre code {
-  background: none;
-  padding: 0;
+/* Typing indicator */
+.openclaw-typing {
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
 }
 
-.openclaw-msg-text {
-  white-space: pre-wrap;
+.openclaw-typing-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 14px;
+  background: var(--background-secondary);
 }
 
-/* Streaming animation */
-.openclaw-streaming {
-  position: relative;
+.openclaw-typing-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
-.openclaw-streaming::after {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 14px;
-  background-color: var(--text-muted);
+.openclaw-typing-dots {
+  display: inline-flex;
+  gap: 3px;
   margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: openclaw-blink 0.8s infinite;
 }
 
-@keyframes openclaw-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+.openclaw-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: dotPulse 1.4s infinite ease-in-out;
+}
+
+.openclaw-dot:nth-child(2) { animation-delay: 0.2s; }
+.openclaw-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.1); }
 }
 
 /* Input area */
 .openclaw-input-area {
+  flex-shrink: 0;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.openclaw-input-row {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--background-modifier-border);
-  flex-shrink: 0;
+  gap: 4px;
+  background: var(--background-secondary);
+  border-radius: 20px;
+  padding: 4px 4px 4px 14px;
+  border: 1px solid var(--background-modifier-border);
+  transition: border-color 0.2s;
+}
+
+.openclaw-input-row:focus-within {
+  border-color: var(--interactive-accent);
 }
 
 .openclaw-input {
   flex: 1;
-  resize: none;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-family: var(--font-interface);
-  background-color: var(--background-primary);
+  border: none;
+  background: transparent;
   color: var(--text-normal);
-  min-height: 36px;
-  max-height: 150px;
-  line-height: 1.5;
-  overflow-y: auto;
-}
-
-.openclaw-input:focus {
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 6px 0;
+  resize: none;
   outline: none;
-  border-color: var(--interactive-accent);
+  min-height: 20px;
+  max-height: 120px;
+  font-family: inherit;
 }
 
 .openclaw-input::placeholder {
   color: var(--text-faint);
 }
 
-.openclaw-btn-group {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.openclaw-send-btn,
-.openclaw-abort-btn {
-  padding: 6px 14px;
-  border-radius: 6px;
-  border: none;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
+/* Send button: circular, accent */
 .openclaw-send-btn {
-  background-color: var(--interactive-accent);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--interactive-accent);
   color: var(--text-on-accent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.1s;
+  padding: 0;
 }
 
 .openclaw-send-btn:hover {
-  opacity: 0.9;
+  opacity: 0.85;
+  transform: scale(1.05);
 }
 
 .openclaw-send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.35;
   cursor: not-allowed;
+  transform: none;
 }
 
+/* Abort button: red circle */
 .openclaw-abort-btn {
-  background-color: var(--background-modifier-error);
-  color: var(--text-on-accent);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: #e53935;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+  padding: 0;
 }
 
 .openclaw-abort-btn:hover {
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 /* Empty state */
 .openclaw-messages:empty::after {
-  content: "Send a message to start chatting with your AI.";
+  content: "Send a message to start chatting.";
   color: var(--text-faint);
   text-align: center;
   font-size: 13px;
-  padding: 40px 20px;
+  padding: 40px 16px;
   align-self: center;
 }
 
-/* Assistant message lists */
-.openclaw-msg-assistant ul,
-.openclaw-msg-assistant ol {
-  margin: 4px 0;
-  padding-left: 20px;
+/* Settings tab */
+.openclaw-setting-group {
+  margin-bottom: 16px;
 }
 
-.openclaw-msg-assistant li {
-  margin-bottom: 2px;
+.openclaw-onboarding {
+  padding: 16px;
+  max-width: 400px;
+  margin: 0 auto;
 }
 
-/* Assistant message headings */
-.openclaw-msg-assistant h1,
-.openclaw-msg-assistant h2,
-.openclaw-msg-assistant h3 {
-  margin: 8px 0 4px;
-  font-size: 14px;
+/* Smooth scrollbar */
+.openclaw-messages::-webkit-scrollbar {
+  width: 4px;
 }
 
-/* Links in messages */
-.openclaw-msg-assistant a {
-  color: var(--interactive-accent);
-  text-decoration: underline;
+.openclaw-messages::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 4px;
 }
 
-/* Mobile-friendly adjustments */
-.openclaw-chat-container .openclaw-msg {
-  max-width: 90%;
-}
-
-/* Smooth scroll for messages area */
-.openclaw-messages {
-  scroll-behavior: smooth;
-}
-
-/* Hide abort button text on very small widths */
-@media (max-width: 300px) {
-  .openclaw-abort-btn {
-    padding: 6px 8px;
-    font-size: 11px;
-  }
-  .openclaw-send-btn {
-    padding: 6px 8px;
-    font-size: 11px;
-  }
+.openclaw-messages::-webkit-scrollbar-track {
+  background: transparent;
 }
