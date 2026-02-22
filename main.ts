@@ -680,9 +680,19 @@ class OpenClawChatView extends ItemView {
 
     // Events
     this.inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        this.sendMessage();
+      if (e.key === "Enter") {
+        // Mobile: Enter always creates new line (use send button to send)
+        // Desktop: Enter sends, Shift+Enter creates new line
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+          (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
+        if (isMobile) {
+          // Let Enter create a new line naturally
+          return;
+        }
+        if (!e.shiftKey) {
+          e.preventDefault();
+          this.sendMessage();
+        }
       }
     });
     this.inputEl.addEventListener("input", () => this.autoResize());
