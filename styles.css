@@ -15,13 +15,23 @@
   display: none;
 }
 
+.openclaw-send-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .openclaw-status-dot {
-  width: 8px;
-  height: 8px;
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
-  flex-shrink: 0;
+  border: 1.5px solid var(--background-secondary);
   transition: background 0.3s;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .openclaw-status-dot.connected {

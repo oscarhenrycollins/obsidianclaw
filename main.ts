@@ -652,7 +652,7 @@ class OpenClawChatView extends ItemView {
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
-    this.statusEl = inputRow.createSpan("openclaw-status-dot");
+    // Status dot overlays the send button as a badge
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
     attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
@@ -673,8 +673,10 @@ class OpenClawChatView extends ItemView {
     this.abortBtn = inputRow.createEl("button", { cls: "openclaw-abort-btn", attr: { "aria-label": "Stop" } });
     this.abortBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
     this.abortBtn.style.display = "none";
-    this.sendBtn = inputRow.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
+    const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
+    this.sendBtn = sendWrapper.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
     this.sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+    this.statusEl = sendWrapper.createSpan("openclaw-status-dot");
 
     // Events
     this.inputEl.addEventListener("keydown", (e) => {
