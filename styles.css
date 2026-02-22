@@ -1,0 +1,212 @@
+/* ObsidianClaw — Chat Sidebar Styles */
+
+.openclaw-chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Header */
+.openclaw-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.openclaw-header-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-normal);
+}
+
+.openclaw-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.2s;
+}
+
+.openclaw-status-dot.connected {
+  background-color: var(--color-green);
+}
+
+.openclaw-status-dot.disconnected {
+  background-color: var(--color-red);
+}
+
+/* Messages */
+.openclaw-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.openclaw-msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.openclaw-msg-user {
+  align-self: flex-end;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-bottom-right-radius: 4px;
+}
+
+.openclaw-msg-assistant {
+  align-self: flex-start;
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  border-bottom-left-radius: 4px;
+}
+
+.openclaw-msg-assistant p {
+  margin: 0 0 8px 0;
+}
+
+.openclaw-msg-assistant p:last-child {
+  margin-bottom: 0;
+}
+
+.openclaw-msg-assistant code {
+  font-size: 12px;
+  background-color: var(--background-primary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.openclaw-msg-assistant pre {
+  background-color: var(--background-primary);
+  padding: 10px 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.openclaw-msg-assistant pre code {
+  background: none;
+  padding: 0;
+}
+
+.openclaw-msg-text {
+  white-space: pre-wrap;
+}
+
+/* Streaming animation */
+.openclaw-streaming {
+  position: relative;
+}
+
+.openclaw-streaming::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 14px;
+  background-color: var(--text-muted);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: openclaw-blink 0.8s infinite;
+}
+
+@keyframes openclaw-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Input area */
+.openclaw-input-area {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.openclaw-input {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-interface);
+  background-color: var(--background-primary);
+  color: var(--text-normal);
+  min-height: 36px;
+  max-height: 150px;
+  line-height: 1.5;
+  overflow-y: auto;
+}
+
+.openclaw-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.openclaw-input::placeholder {
+  color: var(--text-faint);
+}
+
+.openclaw-btn-group {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.openclaw-send-btn,
+.openclaw-abort-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.openclaw-send-btn {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.openclaw-send-btn:hover {
+  opacity: 0.9;
+}
+
+.openclaw-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.openclaw-abort-btn {
+  background-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+.openclaw-abort-btn:hover {
+  opacity: 0.9;
+}
+
+/* Empty state */
+.openclaw-messages:empty::after {
+  content: "Send a message to start chatting with your AI.";
+  color: var(--text-faint);
+  text-align: center;
+  font-size: 13px;
+  padding: 40px 20px;
+  align-self: center;
+}

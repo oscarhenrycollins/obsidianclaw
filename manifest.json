@@ -1,0 +1,10 @@
+{
+  "id": "obsidianclaw",
+  "name": "OpenClaw",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Chat with your OpenClaw AI agent from inside Obsidian. Your vault is the agent's workspace.",
+  "author": "Humanity Labs",
+  "authorUrl": "https://humanitylabs.org",
+  "isDesktopOnly": false
+}
