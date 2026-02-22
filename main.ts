@@ -606,6 +606,7 @@ class OpenClawChatView extends ItemView {
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
+  private fileInputEl!: HTMLInputElement;
   private pendingAttachment: { name: string; content: string } | null = null;
   private sending = false;
 
@@ -652,10 +653,16 @@ class OpenClawChatView extends ItemView {
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
     this.statusEl = inputRow.createSpan("openclaw-status-dot");
-    // Attach button
+    // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
     attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
-    attachBtn.addEventListener("click", () => this.pickAttachment());
+    this.fileInputEl = inputArea.createEl("input", {
+      cls: "openclaw-file-input",
+      attr: { type: "file", accept: "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css" },
+    });
+    this.fileInputEl.style.display = "none";
+    this.fileInputEl.addEventListener("change", () => this.handleFileSelect());
+    attachBtn.addEventListener("click", () => this.fileInputEl.click());
     this.inputEl = inputRow.createEl("textarea", {
       cls: "openclaw-input",
       attr: { placeholder: "Message...", rows: "1" },
@@ -813,51 +820,63 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  async pickAttachment(): Promise<void> {
-    // Use Obsidian's fuzzy suggest modal to pick a vault file
-    const files = this.app.vault.getFiles();
-    const modal = new AttachmentModal(this.app, files, async (file) => {
-      try {
-        const ext = file.extension.toLowerCase();
-        const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext);
-        const isText = ["md", "txt", "json", "csv", "yaml", "yml", "js", "ts", "py", "html", "css", "xml", "toml", "ini", "sh", "bash", "zsh", "log"].includes(ext);
+  async handleFileSelect(): Promise<void> {
+    const file = this.fileInputEl.files?.[0];
+    if (!file) return;
 
-        if (isImage) {
-          // For images: read as base64 and reference the vault path
-          this.pendingAttachment = {
-            name: file.name,
-            content: `[Attached image: ${file.path}]`,
-          };
-        } else if (isText) {
-          // For text files: read content
-          const content = await this.app.vault.cachedRead(file);
-          const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n...(truncated)" : content;
-          this.pendingAttachment = {
-            name: file.name,
-            content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
-          };
-        } else {
-          // Binary/unknown: just reference
-          this.pendingAttachment = {
-            name: file.name,
-            content: `[Attached file: ${file.path}]`,
-          };
-        }
+    try {
+      const isImage = file.type.startsWith("image/");
+      const isText = file.type.startsWith("text/") ||
+        ["application/json", "application/yaml", "application/xml", "application/javascript"].includes(file.type) ||
+        /\.(md|txt|json|csv|yaml|yml|js|ts|py|html|css|xml|toml|ini|sh|log)$/i.test(file.name);
 
-        // Show preview
-        this.attachPreviewEl.empty();
-        this.attachPreviewEl.style.display = "flex";
-        const nameEl = this.attachPreviewEl.createSpan({ text: `📎 ${file.name}`, cls: "openclaw-attach-name" });
-        const removeBtn = this.attachPreviewEl.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
-        removeBtn.addEventListener("click", () => {
-          this.pendingAttachment = null;
-          this.attachPreviewEl.style.display = "none";
-        });
-      } catch {
-        new Notice("Failed to read file");
+      if (isImage) {
+        // Save image to vault and reference it
+        const arrayBuf = await file.arrayBuffer();
+        const vaultPath = `openclaw-attachments/${Date.now()}-${file.name}`;
+        // Ensure folder exists
+        const folder = this.app.vault.getAbstractFileByPath("openclaw-attachments");
+        if (!folder) await this.app.vault.createFolder("openclaw-attachments");
+        await this.app.vault.createBinary(vaultPath, arrayBuf);
+        this.pendingAttachment = {
+          name: file.name,
+          content: `[Attached image saved to vault: ${vaultPath}]`,
+        };
+      } else if (isText) {
+        const content = await file.text();
+        const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n...(truncated)" : content;
+        this.pendingAttachment = {
+          name: file.name,
+          content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
+        };
+      } else {
+        // Binary: save to vault
+        const arrayBuf = await file.arrayBuffer();
+        const vaultPath = `openclaw-attachments/${Date.now()}-${file.name}`;
+        const folder = this.app.vault.getAbstractFileByPath("openclaw-attachments");
+        if (!folder) await this.app.vault.createFolder("openclaw-attachments");
+        await this.app.vault.createBinary(vaultPath, arrayBuf);
+        this.pendingAttachment = {
+          name: file.name,
+          content: `[Attached file saved to vault: ${vaultPath}]`,
+        };
       }
-    });
-    modal.open();
+
+      // Show preview
+      this.attachPreviewEl.empty();
+      this.attachPreviewEl.style.display = "flex";
+      this.attachPreviewEl.createSpan({ text: `📎 ${file.name}`, cls: "openclaw-attach-name" });
+      const removeBtn = this.attachPreviewEl.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
+      removeBtn.addEventListener("click", () => {
+        this.pendingAttachment = null;
+        this.attachPreviewEl.style.display = "none";
+      });
+    } catch (e) {
+      new Notice(`Failed to attach file: ${e}`);
+    }
+
+    // Reset input so the same file can be re-selected
+    this.fileInputEl.value = "";
   }
 
   handleChatEvent(payload: any): void {
