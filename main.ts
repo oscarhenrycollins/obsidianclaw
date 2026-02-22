@@ -627,9 +627,8 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
-    // Header
+    // Header (hidden, status dot moved to input row)
     const header = container.createDiv("openclaw-chat-header");
-    this.statusEl = header.createSpan("openclaw-status-dot");
     header.createSpan({ text: "OpenClaw", cls: "openclaw-header-title" });
 
     // Messages area
@@ -648,6 +647,7 @@ class OpenClawChatView extends ItemView {
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
+    this.statusEl = inputRow.createSpan("openclaw-status-dot");
     this.inputEl = inputRow.createEl("textarea", {
       cls: "openclaw-input",
       attr: { placeholder: "Message...", rows: "1" },

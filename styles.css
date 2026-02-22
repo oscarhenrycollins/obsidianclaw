@@ -10,14 +10,9 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Header: compact, clean */
+/* Header: minimal inline bar */
 .openclaw-chat-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  flex-shrink: 0;
+  display: none;
 }
 
 .openclaw-status-dot {
@@ -44,10 +39,10 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px 10px;
+  padding: 6px 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
@@ -187,8 +182,7 @@
 /* Input area */
 .openclaw-input-area {
   flex-shrink: 0;
-  padding: 6px 8px 8px;
-  border-top: 1px solid var(--background-modifier-border);
+  padding: 4px 6px 6px;
 }
 
 .openclaw-input-row {
@@ -196,14 +190,9 @@
   align-items: flex-end;
   gap: 4px;
   background: var(--background-secondary);
-  border-radius: 20px;
-  padding: 4px 4px 4px 14px;
-  border: 1px solid var(--background-modifier-border);
-  transition: border-color 0.2s;
-}
-
-.openclaw-input-row:focus-within {
-  border-color: var(--interactive-accent);
+  border-radius: 22px;
+  padding: 3px 3px 3px 14px;
+  border: none;
 }
 
 .openclaw-input {
