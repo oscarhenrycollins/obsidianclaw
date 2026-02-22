@@ -700,14 +700,22 @@ class OpenClawChatView extends ItemView {
   }
 
   private extractText(content: any): string {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-      return content
+    let text = "";
+    if (typeof content === "string") {
+      text = content;
+    } else if (Array.isArray(content)) {
+      text = content
         .filter((c: any) => c.type === "text")
         .map((c: any) => c.text)
         .join("\n");
     }
-    return "";
+    // Strip gateway metadata prefixes (e.g. "Conversation info (untrusted metadata):\n```json\n{...}\n```\n\n")
+    text = text.replace(/^Conversation info \(untrusted metadata\):[\s\S]*?```\s*/m, "").trim();
+    // Strip timestamp prefixes like "[Sun 2026-02-22 21:58 GMT+7] "
+    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/m, "").trim();
+    // Strip "NO_REPLY" responses
+    if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
+    return text;
   }
 
   async sendMessage(): Promise<void> {

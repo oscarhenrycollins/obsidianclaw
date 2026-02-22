@@ -350,3 +350,50 @@
   padding: 40px 20px;
   align-self: center;
 }
+
+/* Assistant message lists */
+.openclaw-msg-assistant ul,
+.openclaw-msg-assistant ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.openclaw-msg-assistant li {
+  margin-bottom: 2px;
+}
+
+/* Assistant message headings */
+.openclaw-msg-assistant h1,
+.openclaw-msg-assistant h2,
+.openclaw-msg-assistant h3 {
+  margin: 8px 0 4px;
+  font-size: 14px;
+}
+
+/* Links in messages */
+.openclaw-msg-assistant a {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+}
+
+/* Mobile-friendly adjustments */
+.openclaw-chat-container .openclaw-msg {
+  max-width: 90%;
+}
+
+/* Smooth scroll for messages area */
+.openclaw-messages {
+  scroll-behavior: smooth;
+}
+
+/* Hide abort button text on very small widths */
+@media (max-width: 300px) {
+  .openclaw-abort-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  .openclaw-send-btn {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+}
