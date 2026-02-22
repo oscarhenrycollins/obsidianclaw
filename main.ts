@@ -888,7 +888,9 @@ class OpenClawChatView extends ItemView {
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
     if (payload.state === "delta") {
-      this.typingEl.style.display = "none";
+      // Switch from "Thinking" to "Typing" once streaming begins
+      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+      if (typingText) typingText.textContent = "Typing";
       const text = this.extractText(payload.message);
       if (typeof text === "string") {
         this.streamText = text;
@@ -920,6 +922,9 @@ class OpenClawChatView extends ItemView {
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
+    // Reset for next message
+    const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+    if (typingText) typingText.textContent = "Thinking";
   }
 
   private updateStreamBubble(): void {
