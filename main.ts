@@ -843,16 +843,15 @@ class OpenClawChatView extends ItemView {
         /\.(md|txt|json|csv|yaml|yml|js|ts|py|html|css|xml|toml|ini|sh|log)$/i.test(file.name);
 
       if (isImage) {
-        // Save image to vault and reference it
+        // Read as base64, send inline (don't save to vault)
         const arrayBuf = await file.arrayBuffer();
-        const vaultPath = `openclaw-attachments/${Date.now()}-${file.name}`;
-        // Ensure folder exists
-        const folder = this.app.vault.getAbstractFileByPath("openclaw-attachments");
-        if (!folder) await this.app.vault.createFolder("openclaw-attachments");
-        await this.app.vault.createBinary(vaultPath, arrayBuf);
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = "";
+        for (const b of bytes) binary += String.fromCharCode(b);
+        const b64 = btoa(binary);
         this.pendingAttachment = {
           name: file.name,
-          content: `[Attached image saved to vault: ${vaultPath}]`,
+          content: `[Attached image: ${file.name} (${file.type}, ${Math.round(file.size/1024)}KB)]\ndata:${file.type};base64,${b64}`,
         };
       } else if (isText) {
         const content = await file.text();
@@ -862,15 +861,10 @@ class OpenClawChatView extends ItemView {
           content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
         };
       } else {
-        // Binary: save to vault
-        const arrayBuf = await file.arrayBuffer();
-        const vaultPath = `openclaw-attachments/${Date.now()}-${file.name}`;
-        const folder = this.app.vault.getAbstractFileByPath("openclaw-attachments");
-        if (!folder) await this.app.vault.createFolder("openclaw-attachments");
-        await this.app.vault.createBinary(vaultPath, arrayBuf);
+        // Binary: describe it, can't meaningfully send
         this.pendingAttachment = {
           name: file.name,
-          content: `[Attached file saved to vault: ${vaultPath}]`,
+          content: `[Attached file: ${file.name} (${file.type || "unknown type"}, ${Math.round(file.size/1024)}KB)]`,
         };
       }
 
