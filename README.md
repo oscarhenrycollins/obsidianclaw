@@ -13,6 +13,8 @@ Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs,
 - **"Ask about this note"** — Send any note as context with one command
 - **Auto-reconnect** — Handles disconnections gracefully with exponential backoff
 - **Device authentication** — Ed25519 keypair for secure scope authorization
+- **Tool call visibility** — See exactly what your agent does: files read/written, commands run, pages fetched — with clickable links
+- **Cross-device sync** — Tool calls and chat history persist across devices via Obsidian Sync
 - **Dark/light theme** — Follows your Obsidian theme automatically
 
 ## Requirements
@@ -152,6 +154,16 @@ openclaw devices revoke --device <deviceId> --role operator
 ```
 
 Then reconnect from Obsidian — a new pairing request will be created.
+
+### Switching between devices
+
+ObsidianClaw works on both desktop and mobile. When switching between devices:
+
+1. **Force-quit Obsidian** on the device you're switching to (swipe up on iOS, Cmd+Q on Mac)
+2. **Reopen Obsidian** — it picks up synced data and loads the latest chat history
+3. Everything works perfectly from that point — full history, tool calls, and streaming
+
+This is because tool call events are only sent to the device that initiated the request. The other device syncs the results via Obsidian Sync's `data.json`. A quick restart ensures it loads the latest state.
 
 ### Messages not appearing
 

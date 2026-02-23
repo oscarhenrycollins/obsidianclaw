@@ -14,6 +14,8 @@ import {
 
 // ─── Settings ────────────────────────────────────────────────────────
 
+type StreamItem = { type: "tool"; label: string; url?: string } | { type: "text"; text: string };
+
 interface OpenClawSettings {
   gatewayUrl: string;
   token: string;
@@ -22,6 +24,8 @@ interface OpenClawSettings {
   deviceId?: string;
   devicePublicKey?: string;
   devicePrivateKey?: string;
+  /** Persisted stream items (tool calls + intermediary text) keyed by assistant message index */
+  streamItemsMap?: Record<string, StreamItem[]>;
 }
 
 const DEFAULT_SETTINGS: OpenClawSettings = {
@@ -612,7 +616,7 @@ class OpenClawChatView extends ItemView {
   private intermediaryTexts: string[] = [];
   private lastCutIndex: number = 0;
   /** Ordered list of intermediary items (tool calls + text collapses) for re-rendering after loadHistory */
-  private streamItems: Array<{ type: "tool"; label: string } | { type: "text"; text: string }> = [];
+  private streamItems: StreamItem[] = [];
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -1047,11 +1051,82 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  private appendToolCall(label: string): void {
-    // Tool calls are always visible, flat in the chat, before the stream bubble
+  private buildToolLabel(toolName: string, args: any): { label: string; url?: string } {
+    const a = args || {};
+    switch (toolName) {
+      case "exec": {
+        const cmd = a.command || "";
+        const short = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
+        return { label: `🔧 ${short || "Running command"}` };
+      }
+      case "read": case "Read": {
+        const p = a.path || a.file_path || "";
+        const name = p.split("/").pop() || "file";
+        return { label: `📄 Reading ${name}` };
+      }
+      case "write": case "Write": {
+        const p = a.path || a.file_path || "";
+        const name = p.split("/").pop() || "file";
+        return { label: `✏️ Writing ${name}` };
+      }
+      case "edit": case "Edit": {
+        const p = a.path || a.file_path || "";
+        const name = p.split("/").pop() || "file";
+        return { label: `✏️ Editing ${name}` };
+      }
+      case "web_search": {
+        const q = a.query || "";
+        return { label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
+      }
+      case "web_fetch": {
+        const rawUrl = a.url || "";
+        try {
+          const domain = new URL(rawUrl).hostname;
+          return { label: `🌐 Fetching ${domain}`, url: rawUrl };
+        } catch {
+          return { label: `🌐 Fetching page`, url: rawUrl || undefined };
+        }
+      }
+      case "browser":
+        return { label: "🌐 Using browser" };
+      case "image":
+        return { label: "👁️ Viewing image" };
+      case "memory_search": {
+        const q = a.query || "";
+        return { label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
+      }
+      case "memory_get": {
+        const p = a.path || "";
+        const name = p.split("/").pop() || "memory";
+        return { label: `🧠 Reading ${name}` };
+      }
+      case "message":
+        return { label: "💬 Sending message" };
+      case "tts":
+        return { label: "🔊 Speaking" };
+      case "sessions_spawn":
+        return { label: "🤖 Spawning sub-agent" };
+      default:
+        return { label: toolName ? `⚡ ${toolName}` : "Working" };
+    }
+  }
+
+  private appendToolCall(label: string, url?: string): void {
     const el = document.createElement("div");
     el.className = "openclaw-tool-item";
-    el.textContent = label;
+    if (url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.textContent = label;
+      link.className = "openclaw-tool-link";
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        window.open(url, "_blank");
+      });
+      el.appendChild(link);
+    } else {
+      el.textContent = label;
+    }
     if (this.streamEl) {
       this.streamEl.parentElement?.insertBefore(el, this.streamEl);
     } else {
@@ -1095,22 +1170,6 @@ class OpenClawChatView extends ItemView {
     const phase = payload.data?.phase || payload.phase || "";
     const stream = payload.stream || "";
 
-    const labels: Record<string, string> = {
-      exec: "🔧 Running command",
-      read: "📄 Reading file", Read: "📄 Reading file",
-      write: "✏️ Writing file", Write: "✏️ Writing file",
-      edit: "✏️ Editing file", Edit: "✏️ Editing file",
-      web_search: "🔍 Searching the web",
-      web_fetch: "🌐 Fetching page",
-      browser: "🌐 Using browser",
-      image: "👁️ Viewing image",
-      memory_search: "🧠 Searching memory",
-      memory_get: "🧠 Reading memory",
-      message: "💬 Sending message",
-      tts: "🔊 Speaking",
-      sessions_spawn: "🤖 Spawning sub-agent",
-    };
-
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
@@ -1124,10 +1183,11 @@ class OpenClawChatView extends ItemView {
         }
         this.lastCutIndex = this.streamText.length;
       }
-      const label = labels[toolName] || (toolName ? `Using ${toolName}` : "Working");
+      const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
-      this.streamItems.push({ type: "tool", label });
-      this.appendToolCall(label);
+      this.streamItems.push({ type: "tool", label, url } as StreamItem);
+      console.log("[OC] streamItem added:", label, "total:", this.streamItems.length);
+      this.appendToolCall(label, url);
       this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished, show thinking while waiting for next action
@@ -1147,9 +1207,25 @@ class OpenClawChatView extends ItemView {
     const payloadSk = payload.sessionKey ?? "";
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
-    // Ignore chat events when no active stream (stale finals from compaction, etc.)
+    // No active stream (passive device): still refresh history and inject any locally collected stream items
     if (!this.streamRunId && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
-      console.log(`[OC] ignoring stale ${payload.state} (no active stream)`);
+      const items = [...this.streamItems];
+      this.streamItems = [];
+      this.currentToolCalls = [];
+      console.log(`[OC] passive ${payload.state} — refreshing history, items:`, items.length);
+      this.loadHistory().then(() => {
+        if (items.length > 0) {
+          // Persist on passive device too
+          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
+          if (lastAssistant) {
+            const key = String(lastAssistant.timestamp);
+            if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+            this.plugin.settings.streamItemsMap[key] = items;
+            this.plugin.saveSettings();
+          }
+          this.insertStreamItemsBeforeLastAssistant(items);
+        }
+      });
       return;
     }
 
@@ -1168,8 +1244,25 @@ class OpenClawChatView extends ItemView {
     } else if (payload.state === "final") {
       const items = [...this.streamItems];
       this.finishStream();
-      this.loadHistory().then(() => {
-        if (items.length > 0) this.insertStreamItemsBeforeLastAssistant(items);
+      this.loadHistory().then(async () => {
+        if (items.length > 0) {
+          // Persist stream items keyed to the last assistant message timestamp
+          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
+          console.log("[OC] persist stream items:", items.length, "lastAssistant:", !!lastAssistant, "ts:", lastAssistant?.timestamp, "items:", JSON.stringify(items));
+          if (lastAssistant) {
+            const key = String(lastAssistant.timestamp);
+            if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+            this.plugin.settings.streamItemsMap[key] = items;
+            // Keep only the last 100 entries to prevent unbounded growth
+            const keys = Object.keys(this.plugin.settings.streamItemsMap);
+            if (keys.length > 100) {
+              keys.sort().slice(0, keys.length - 100).forEach(k => delete this.plugin.settings.streamItemsMap![k]);
+            }
+            await this.plugin.saveSettings();
+            console.log("[OC] streamItemsMap saved, keys:", Object.keys(this.plugin.settings.streamItemsMap).length);
+          }
+          this.insertStreamItemsBeforeLastAssistant(items);
+        }
       });
     } else if (payload.state === "aborted") {
       if (this.streamText) {
@@ -1206,34 +1299,48 @@ class OpenClawChatView extends ItemView {
     if (typingText) typingText.textContent = "Thinking";
   }
 
-  private insertStreamItemsBeforeLastAssistant(items: Array<{ type: "tool"; label: string } | { type: "text"; text: string }>): void {
+  private insertStreamItemsBeforeLastAssistant(items: StreamItem[]): void {
     if (items.length === 0) return;
     const bubbles = this.messagesEl.querySelectorAll(".openclaw-msg-assistant");
     const lastBubble = bubbles[bubbles.length - 1];
     if (!lastBubble) return;
 
     for (const item of items) {
-      if (item.type === "tool") {
-        const el = document.createElement("div");
-        el.className = "openclaw-tool-item";
-        el.textContent = item.label;
-        lastBubble.parentElement?.insertBefore(el, lastBubble);
-      } else {
-        const details = document.createElement("details");
-        details.className = "openclaw-intermediary";
-        const summary = document.createElement("summary");
-        summary.className = "openclaw-intermediary-summary";
-        const preview = item.text.length > 60 ? item.text.slice(0, 60) + "..." : item.text;
-        summary.textContent = preview;
-        details.appendChild(summary);
-        const content = document.createElement("div");
-        content.className = "openclaw-intermediary-content";
-        content.textContent = item.text;
-        details.appendChild(content);
-        lastBubble.parentElement?.insertBefore(details, lastBubble);
-      }
+      const el = this.createStreamItemEl(item);
+      lastBubble.parentElement?.insertBefore(el, lastBubble);
     }
     this.scrollToBottom();
+  }
+
+  private createStreamItemEl(item: StreamItem): HTMLElement {
+    if (item.type === "tool") {
+      const el = document.createElement("div");
+      el.className = "openclaw-tool-item";
+      if (item.url) {
+        const link = document.createElement("a");
+        link.href = item.url;
+        link.textContent = item.label;
+        link.className = "openclaw-tool-link";
+        link.addEventListener("click", (e) => { e.preventDefault(); window.open(item.url!, "_blank"); });
+        el.appendChild(link);
+      } else {
+        el.textContent = item.label;
+      }
+      return el;
+    } else {
+      const details = document.createElement("details");
+      details.className = "openclaw-intermediary";
+      const summary = document.createElement("summary");
+      summary.className = "openclaw-intermediary-summary";
+      const preview = item.text.length > 60 ? item.text.slice(0, 60) + "..." : item.text;
+      summary.textContent = preview;
+      details.appendChild(summary);
+      const content = document.createElement("div");
+      content.className = "openclaw-intermediary-content";
+      content.textContent = item.text;
+      details.appendChild(content);
+      return details;
+    }
   }
 
   private extractDeltaText(msg: any): string {
@@ -1280,16 +1387,27 @@ class OpenClawChatView extends ItemView {
     if (!visibleText) return;
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
-      this.scrollToBottom();
+      this.scrollToBottom(); // Scroll once when bubble first appears
     }
     this.streamEl.empty();
     this.streamEl.createDiv({ text: visibleText, cls: "openclaw-msg-text" });
-    this.scrollToBottom();
+    // Don't auto-scroll during text streaming — let user read from the top
   }
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
+    const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
+      // Insert persisted stream items before their associated assistant message
+      if (msg.role === "assistant") {
+        const key = String(msg.timestamp);
+        const stored = itemsMap[key];
+        if (stored && stored.length > 0) {
+          for (const item of stored) {
+            this.messagesEl.appendChild(this.createStreamItemEl(item));
+          }
+        }
+      }
       const cls = msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
       const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`);
       // Render images

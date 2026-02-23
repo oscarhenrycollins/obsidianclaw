@@ -164,6 +164,17 @@
   line-height: 1.4;
 }
 
+.openclaw-tool-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.openclaw-tool-link:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
 /* Collapsible intermediary text (between tool calls) */
 .openclaw-intermediary {
   margin: 2px 0;
