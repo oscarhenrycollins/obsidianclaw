@@ -14,6 +14,7 @@
       --text:#e2e8f0;--text-dim:#94a3b8;--text-bright:#f8fafc;
       --bg:#0f0f17;--bg-card:#1a1a28;
       --gold:#d4a843;--gold-dim:rgba(212,168,67,.15);
+      --green:#22c55e;
     }
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased;overflow-x:hidden}
@@ -31,7 +32,8 @@
       padding:6px 14px;border-radius:20px;font-size:12px;
       color:var(--text-dim);font-weight:500;margin-bottom:24px;
     }
-    .badge-dot{width:6px;height:6px;border-radius:50%;background:var(--purple)}
+    .badge-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse-dot 2s infinite}
+    @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
     h1{
       font-size:clamp(2.5rem,6vw,4rem);font-weight:800;
@@ -68,20 +70,86 @@
       padding:14px 28px;border-radius:12px;
       font-size:15px;font-weight:500;
       border:1px solid var(--obsidian-border);
-      transition:all .15s;text-decoration:none;
+      transition:all .15s;text-decoration:none;cursor:pointer;
     }
     .cta-secondary:hover{border-color:var(--purple);text-decoration:none}
 
     .cta-sub{font-size:13px;color:var(--text-dim);margin-top:16px}
 
-    /* Logos / brands */
+    /* Modal */
+    .modal-overlay{
+      position:fixed;top:0;left:0;right:0;bottom:0;
+      background:rgba(0,0,0,.7);backdrop-filter:blur(8px);
+      display:none;align-items:center;justify-content:center;
+      z-index:100;padding:24px;
+    }
+    .modal-overlay.active{display:flex}
+    .modal{
+      background:var(--bg-card);border:1px solid var(--obsidian-border);
+      border-radius:20px;padding:36px 32px;max-width:520px;width:100%;
+      position:relative;
+    }
+    .modal-close{
+      position:absolute;top:16px;right:16px;
+      background:none;border:none;color:var(--text-dim);
+      font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;
+    }
+    .modal-close:hover{background:var(--obsidian-light);color:var(--text)}
+    .modal-badge{
+      display:inline-flex;align-items:center;gap:6px;
+      background:var(--gold-dim);border:1px solid rgba(212,168,67,.3);
+      padding:4px 12px;border-radius:14px;font-size:11px;
+      color:var(--gold);font-weight:600;margin-bottom:20px;text-transform:uppercase;letter-spacing:.05em;
+    }
+    .modal h2{font-size:22px;font-weight:700;color:var(--text-bright);margin-bottom:8px}
+    .modal .modal-desc{font-size:14px;color:var(--text-dim);margin-bottom:24px;line-height:1.6}
+    .modal .modal-desc a{color:var(--purple-light)}
+
+    .install-steps{display:flex;flex-direction:column;gap:14px;margin-bottom:24px}
+    .install-step{
+      display:flex;gap:12px;align-items:flex-start;
+    }
+    .step-num{
+      width:26px;height:26px;border-radius:8px;
+      background:var(--purple-glow);border:1px solid rgba(124,58,237,.3);
+      color:var(--purple-light);font-size:12px;font-weight:700;
+      display:flex;align-items:center;justify-content:center;flex-shrink:0;
+      margin-top:1px;
+    }
+    .step-content{flex:1}
+    .step-content p{font-size:14px;color:var(--text);line-height:1.5}
+    .step-content .step-detail{font-size:12px;color:var(--text-dim);margin-top:2px}
+
+    .copy-box{
+      display:flex;align-items:center;gap:8px;
+      background:var(--obsidian);border:1px solid var(--obsidian-border);
+      border-radius:8px;padding:10px 14px;margin-top:8px;
+      font-family:'SF Mono',Menlo,monospace;font-size:13px;color:var(--purple-light);
+      cursor:pointer;transition:border-color .15s;
+    }
+    .copy-box:hover{border-color:var(--purple)}
+    .copy-box code{flex:1;user-select:all}
+    .copy-box .copy-icon{
+      color:var(--text-dim);font-size:12px;font-weight:600;
+      padding:3px 8px;border-radius:4px;background:var(--obsidian-light);
+      white-space:nowrap;transition:all .15s;
+    }
+    .copy-box.copied .copy-icon{background:var(--green);color:#fff}
+
+    .modal-note{
+      font-size:12px;color:var(--text-dim);line-height:1.6;
+      padding-top:16px;border-top:1px solid var(--obsidian-border);
+    }
+    .modal-note strong{color:var(--text)}
+
+    /* Brands */
     .brand-row{
       display:flex;gap:32px;align-items:center;justify-content:center;
       margin-top:48px;opacity:.5;
     }
     .brand-row span{font-size:14px;font-weight:600;letter-spacing:.02em}
 
-    /* The pitch */
+    /* Pitch */
     .pitch{
       padding:80px 24px;max-width:700px;margin:0 auto;text-align:center;
     }
@@ -184,12 +252,64 @@
 <body>
 
 <section class="hero">
-  <div class="badge"><span class="badge-dot"></span> Obsidian + OpenClaw</div>
+  <div class="badge"><span class="badge-dot"></span> Beta — now available via BRAT</div>
   <h1>Your knowledge base<br>meets <span>your AI agent</span></h1>
   <p class="subtitle">ObsidianClaw brings OpenClaw's autonomous AI into Obsidian's sidebar. Your notes on the left, your agent on the right, working from the same files.</p>
-  <a href="https://github.com/humanitylabs-org/obsidianclaw" class="cta-btn">Get the plugin</a>
+  <div class="cta-group">
+    <button class="cta-btn" onclick="openModal()">⚡ Install the beta</button>
+    <a href="https://github.com/oscarhenrycollins/obsidianclaw" class="cta-secondary">View on GitHub →</a>
+  </div>
   <p class="cta-sub">Requires <a href="https://openclaw.ai">OpenClaw</a> + <a href="https://obsidian.md">Obsidian</a></p>
 </section>
+
+<!-- Install Modal -->
+<div class="modal-overlay" id="installModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-badge">⏳ Beta — pending community approval</div>
+    <h2>Install via BRAT</h2>
+    <p class="modal-desc"><a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> is a trusted community plugin that installs beta plugins from GitHub. It auto-updates when new versions are released. Works on desktop and mobile.</p>
+
+    <div class="install-steps">
+      <div class="install-step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <p>Install <strong>BRAT</strong> from Community Plugins</p>
+          <div class="step-detail">Settings → Community Plugins → Browse → search "BRAT" → Install → Enable</div>
+        </div>
+      </div>
+      <div class="install-step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <p>Add ObsidianClaw as a beta plugin</p>
+          <div class="step-detail">Settings → BRAT → Add Beta Plugin → paste this:</div>
+          <div class="copy-box" onclick="copyRepo(this)">
+            <code>oscarhenrycollins/obsidianclaw</code>
+            <span class="copy-icon">copy</span>
+          </div>
+        </div>
+      </div>
+      <div class="install-step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <p>Connect to your gateway</p>
+          <div class="step-detail">The setup wizard opens automatically. Enter your Tailscale gateway URL and auth token.</div>
+        </div>
+      </div>
+      <div class="install-step">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <p>Approve the device</p>
+          <div class="step-detail">Your AI agent approves it, or run: <code>openclaw devices approve &lt;id&gt;</code></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-note">
+      <strong>Coming soon to the plugin store.</strong> Once approved, you'll be able to search "OpenClaw" directly in Community Plugins. BRAT users auto-migrate with no action needed.
+    </div>
+  </div>
+</div>
 
 <section class="pitch">
   <h2>Two powerful tools. One seamless experience.</h2>
@@ -232,9 +352,9 @@
     <p>One command sends the current note as context. The agent reads it and responds with full understanding.</p>
   </div>
   <div class="feature">
-    <div class="feature-icon">🔄</div>
-    <h3>Live file sync</h3>
-    <p>Your vault is the agent's workspace. When it creates or edits a file, you see it instantly. When you edit, it knows.</p>
+    <div class="feature-icon">🔧</div>
+    <h3>See what it does</h3>
+    <p>Tool calls appear inline: files read, commands run, web pages fetched. Full transparency, clickable links.</p>
   </div>
   <div class="feature">
     <div class="feature-icon">🎨</div>
@@ -244,7 +364,7 @@
   <div class="feature">
     <div class="feature-icon">⚡</div>
     <h3>Streaming responses</h3>
-    <p>See tokens appear in real-time. Stop generation at any point with one click.</p>
+    <p>See tokens appear in real-time. Tool calls interleaved with text, just like watching it think.</p>
   </div>
   <div class="feature">
     <div class="feature-icon">📱</div>
@@ -259,15 +379,15 @@
     <div class="how-step">
       <div class="how-num">1</div>
       <div class="how-step-text">
-        <h4>Install the plugin</h4>
-        <p>Search "OpenClaw" in Obsidian's Community Plugins and enable it.</p>
+        <h4>Install via BRAT</h4>
+        <p>Add the plugin through BRAT with one line. Takes 30 seconds.</p>
       </div>
     </div>
     <div class="how-step">
       <div class="how-num">2</div>
       <div class="how-step-text">
-        <h4>Connect to your gateway</h4>
-        <p>The setup wizard walks you through entering your OpenClaw gateway address and approving your device.</p>
+        <h4>Connect over Tailscale</h4>
+        <p>Enter your gateway's Tailscale URL and auth token. Encrypted end-to-end.</p>
       </div>
     </div>
     <div class="how-step">
@@ -293,7 +413,7 @@
 </section>
 
 <section class="pricing">
-  <p><strong>Free to get started.</strong> Install the plugin, connect to your gateway, and chat. We'll share more about plans and pricing soon.</p>
+  <p><strong>Free and open source.</strong> Install the plugin, connect to your gateway, and chat. The plugin is MIT licensed.</p>
 </section>
 
 <footer>
@@ -305,6 +425,18 @@
   <span class="footer-sep">·</span>
   <a href="https://vajra.to">Vajra</a>
 </footer>
+
+<script>
+function openModal(){document.getElementById('installModal').classList.add('active')}
+function closeModal(){document.getElementById('installModal').classList.remove('active')}
+function copyRepo(el){
+  navigator.clipboard.writeText('oscarhenrycollins/obsidianclaw');
+  el.classList.add('copied');
+  el.querySelector('.copy-icon').textContent='copied!';
+  setTimeout(()=>{el.classList.remove('copied');el.querySelector('.copy-icon').textContent='copy'},2000);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+</script>
 
 </body>
 </html>
