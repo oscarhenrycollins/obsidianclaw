@@ -1,6 +1,6 @@
 {
   "name": "obsidianclaw",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Official OpenClaw plugin for Obsidian",
   "main": "main.js",
   "scripts": {

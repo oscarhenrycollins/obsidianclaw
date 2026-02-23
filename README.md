@@ -185,7 +185,7 @@ Access settings via Obsidian Settings → OpenClaw:
 ## Building from Source
 
 ```bash
-git clone https://github.com/humanitylabs-org/obsidianclaw.git
+git clone https://github.com/oscarhenrycollins/obsidianclaw.git
 cd obsidianclaw
 npm install
 npm run build
@@ -195,6 +195,7 @@ Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plu
 
 ## Links
 
+- [ObsidianClaw](https://obsidianclaw.ai) — Official site
 - [OpenClaw](https://openclaw.ai) — The AI agent framework
 - [Bot Setup Guide](https://botsetupguide.com) — Full setup walkthrough
 - [Humanity Labs](https://humanitylabs.org) — Creators of ObsidianClaw

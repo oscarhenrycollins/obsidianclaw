@@ -1208,15 +1208,18 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
+      // Save the current text segment before the tool call
+      if (this.streamText) {
+        this.streamItems.push({ type: "text", text: this.streamText });
+      }
       // Freeze the current streaming bubble in place (don't delete it)
       if (this.streamEl) {
         this.streamEl.removeClass("openclaw-streaming");
         this.streamEl = null; // Next text delta will create a new bubble below the tool item
       }
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
-      const textPos = this.streamText?.length || 0;
       this.currentToolCalls.push(label);
-      this.streamItems.push({ type: "tool", label, url, textPos } as StreamItem);
+      this.streamItems.push({ type: "tool", label, url } as StreamItem);
       this.appendToolCall(label, url, true); // true = active (animated)
       this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
@@ -1224,6 +1227,7 @@ class OpenClawChatView extends ItemView {
       this.deactivateLastToolItem();
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
+      this.scrollToBottom();
     } else if (stream === "compaction" || state === "compacting") {
       this.currentToolCalls.push("Compacting memory");
       this.streamItems.push({ type: "tool", label: "Compacting memory" });
@@ -1244,7 +1248,7 @@ class OpenClawChatView extends ItemView {
       const items = [...this.streamItems];
       this.streamItems = [];
       this.currentToolCalls = [];
-      console.log(`[OC] passive ${payload.state} — refreshing history, items:`, items.length);
+      // Passive device: refresh history on final
       this.loadHistory().then(() => {
         if (items.length > 0) {
           // Persist on passive device too
@@ -1275,27 +1279,30 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
+      // Capture the last text segment before finishing
+      if (this.streamText) {
+        this.streamItems.push({ type: "text", text: this.streamText });
+      }
       const items = [...this.streamItems];
       this.finishStream();
-      this.loadHistory().then(async () => {
+
+      // Load history and re-render with interleaved items
+      this.loadHistory(true).then(async () => {
         if (items.length > 0) {
-          // Persist stream items keyed to the last assistant message timestamp
           const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
-          console.log("[OC] persist stream items:", items.length, "lastAssistant:", !!lastAssistant, "ts:", lastAssistant?.timestamp, "items:", JSON.stringify(items));
           if (lastAssistant) {
             const key = String(lastAssistant.timestamp);
             if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
             this.plugin.settings.streamItemsMap[key] = items;
-            // Keep only the last 100 entries to prevent unbounded growth
             const keys = Object.keys(this.plugin.settings.streamItemsMap);
             if (keys.length > 100) {
               keys.sort().slice(0, keys.length - 100).forEach(k => delete this.plugin.settings.streamItemsMap![k]);
             }
             await this.plugin.saveSettings();
-            console.log("[OC] streamItemsMap saved, keys:", Object.keys(this.plugin.settings.streamItemsMap).length);
           }
-          this.insertStreamItemsBeforeLastAssistant(items);
         }
+        // Re-render with interleaved items now that data is saved
+        await this.renderMessages();
       });
     } else if (payload.state === "aborted") {
       if (this.streamText) {
@@ -1409,39 +1416,24 @@ class OpenClawChatView extends ItemView {
     this.messagesEl.empty();
     const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
-      // For assistant messages with stored tool items that have positions, interleave text and tools
+      // For assistant messages with stored stream items, render interleaved text + tools
       if (msg.role === "assistant") {
         const key = String(msg.timestamp);
         const stored = itemsMap[key];
-        const toolItems = stored?.filter((s: StreamItem) => s.type === "tool" && (s as any).textPos !== undefined) || [];
+        const hasTextItems = stored?.some((s: StreamItem) => s.type === "text") || false;
 
-        if (toolItems.length > 0 && msg.text) {
-          // Interleave: split text at tool positions, render text chunk → tool → text chunk → tool → ...
-          const positions = toolItems.map((t: any) => ({ pos: t.textPos as number, item: t }));
-          positions.sort((a: any, b: any) => a.pos - b.pos);
-
-          let lastPos = 0;
-          for (const { pos, item } of positions) {
-            const chunk = msg.text.slice(lastPos, pos).trim();
-            if (chunk) {
+        if (stored && stored.length > 0 && hasTextItems) {
+          // Render items in order: text segments as bubbles, tool items as tool items
+          for (const item of stored) {
+            if (item.type === "text" && item.text.trim()) {
               const chunkBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
               try {
-                await MarkdownRenderer.render(this.app, chunk, chunkBubble, "", this.plugin);
+                await MarkdownRenderer.render(this.app, item.text, chunkBubble, "", this.plugin);
               } catch {
-                chunkBubble.createDiv({ text: chunk, cls: "openclaw-msg-text" });
+                chunkBubble.createDiv({ text: item.text, cls: "openclaw-msg-text" });
               }
-            }
-            this.messagesEl.appendChild(this.createStreamItemEl(item));
-            lastPos = pos;
-          }
-          // Remaining text after last tool call
-          const remaining = msg.text.slice(lastPos).trim();
-          if (remaining) {
-            const finalBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
-            try {
-              await MarkdownRenderer.render(this.app, remaining, finalBubble, "", this.plugin);
-            } catch {
-              finalBubble.createDiv({ text: remaining, cls: "openclaw-msg-text" });
+            } else if (item.type === "tool") {
+              this.messagesEl.appendChild(this.createStreamItemEl(item));
             }
           }
           // Render images if any
@@ -1457,10 +1449,10 @@ class OpenClawChatView extends ItemView {
               });
             }
           }
-          continue; // Skip normal rendering for this message
+          continue; // Skip normal rendering — we handled it via stream items
         }
 
-        // Fallback: no positions, insert all items before the bubble (legacy data)
+        // Fallback: tool-only items (no text segments), insert before the bubble
         if (stored && stored.length > 0) {
           for (const item of stored) {
             this.messagesEl.appendChild(this.createStreamItemEl(item));
@@ -1631,15 +1623,6 @@ export default class OpenClawPlugin extends Plugin {
         }
       },
       onEvent: (evt) => {
-        // Log tool events and state changes
-        if (evt.event === "agent") {
-          const stream = evt.payload?.stream || "";
-          if (stream === "tool" || stream === "lifecycle" || stream === "compaction") {
-            console.log("[OC]", stream, evt.payload?.data?.name || evt.payload?.data?.phase || "");
-          }
-        } else if (evt.event === "chat") {
-          console.log("[OC]", "chat", evt.payload?.state || "");
-        }
         if (evt.event === "chat") {
           this.chatView?.handleChatEvent(evt.payload);
         } else if (evt.event === "stream" || evt.event === "agent") {
