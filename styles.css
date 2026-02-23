@@ -164,6 +164,47 @@
   line-height: 1.4;
 }
 
+/* Collapsible intermediary text (between tool calls) */
+.openclaw-intermediary {
+  margin: 2px 0;
+  padding: 0 8px;
+}
+
+.openclaw-intermediary-summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 2px 0;
+  -webkit-user-select: none;
+  user-select: none;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.openclaw-intermediary-summary::-webkit-details-marker {
+  display: none;
+}
+
+.openclaw-intermediary-summary::before {
+  content: "▶ ";
+  font-size: 9px;
+}
+
+.openclaw-intermediary[open] > .openclaw-intermediary-summary::before {
+  content: "▼ ";
+}
+
+.openclaw-intermediary-content {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 8px 4px 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 /* Typing indicator */
 .openclaw-typing {
   padding: 4px 12px 8px;

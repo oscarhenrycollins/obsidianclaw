@@ -609,6 +609,10 @@ class OpenClawChatView extends ItemView {
   private lastDeltaTime: number = 0;
   private workingTimer: ReturnType<typeof setTimeout> | null = null;
   private currentToolCalls: string[] = [];
+  private intermediaryTexts: string[] = [];
+  private lastCutIndex: number = 0;
+  /** Ordered list of intermediary items (tool calls + text collapses) for re-rendering after loadHistory */
+  private streamItems: Array<{ type: "tool"; label: string } | { type: "text"; text: string }> = [];
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -1110,10 +1114,20 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
+      // If there's streamed text since last cut, save it as intermediary
+      if (this.streamText && this.streamText.length > this.lastCutIndex) {
+        const chunk = this.streamText.slice(this.lastCutIndex).trim();
+        if (chunk) {
+          this.intermediaryTexts.push(chunk);
+          this.streamItems.push({ type: "text", text: chunk });
+          this.collapseCurrentStream(chunk);
+        }
+        this.lastCutIndex = this.streamText.length;
+      }
       const label = labels[toolName] || (toolName ? `Using ${toolName}` : "Working");
       this.currentToolCalls.push(label);
+      this.streamItems.push({ type: "tool", label });
       this.appendToolCall(label);
-      // Hide typing indicator since the tool call item provides feedback
       this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished, show thinking while waiting for next action
@@ -1121,6 +1135,7 @@ class OpenClawChatView extends ItemView {
       this.typingEl.style.display = "";
     } else if (stream === "compaction" || state === "compacting") {
       this.currentToolCalls.push("Compacting memory");
+      this.streamItems.push({ type: "tool", label: "Compacting memory" });
       this.appendToolCall("Compacting memory");
       this.typingEl.style.display = "none";
     }
@@ -1131,6 +1146,12 @@ class OpenClawChatView extends ItemView {
     const sk = this.plugin.settings.sessionKey;
     const payloadSk = payload.sessionKey ?? "";
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
+
+    // Ignore chat events when no active stream (stale finals from compaction, etc.)
+    if (!this.streamRunId && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
+      console.log(`[OC] ignoring stale ${payload.state} (no active stream)`);
+      return;
+    }
 
     if (payload.state === "delta") {
       // Clear timers, hide typing indicator once we have text to show
@@ -1145,11 +1166,10 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
-      const toolCalls = [...this.currentToolCalls];
+      const items = [...this.streamItems];
       this.finishStream();
       this.loadHistory().then(() => {
-        // Re-insert tool calls before the last assistant message
-        if (toolCalls.length > 0) this.insertToolCallsBeforeLastAssistant(toolCalls);
+        if (items.length > 0) this.insertStreamItemsBeforeLastAssistant(items);
       });
     } else if (payload.state === "aborted") {
       if (this.streamText) {
@@ -1176,6 +1196,9 @@ class OpenClawChatView extends ItemView {
     this.streamText = null;
     this.lastDeltaTime = 0;
     this.currentToolCalls = [];
+    this.intermediaryTexts = [];
+    this.lastCutIndex = 0;
+    this.streamItems = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
@@ -1183,17 +1206,32 @@ class OpenClawChatView extends ItemView {
     if (typingText) typingText.textContent = "Thinking";
   }
 
-  private insertToolCallsBeforeLastAssistant(toolCalls: string[]): void {
-    if (toolCalls.length === 0) return;
+  private insertStreamItemsBeforeLastAssistant(items: Array<{ type: "tool"; label: string } | { type: "text"; text: string }>): void {
+    if (items.length === 0) return;
     const bubbles = this.messagesEl.querySelectorAll(".openclaw-msg-assistant");
     const lastBubble = bubbles[bubbles.length - 1];
     if (!lastBubble) return;
 
-    for (const label of toolCalls) {
-      const el = document.createElement("div");
-      el.className = "openclaw-tool-item";
-      el.textContent = label;
-      lastBubble.parentElement?.insertBefore(el, lastBubble);
+    for (const item of items) {
+      if (item.type === "tool") {
+        const el = document.createElement("div");
+        el.className = "openclaw-tool-item";
+        el.textContent = item.label;
+        lastBubble.parentElement?.insertBefore(el, lastBubble);
+      } else {
+        const details = document.createElement("details");
+        details.className = "openclaw-intermediary";
+        const summary = document.createElement("summary");
+        summary.className = "openclaw-intermediary-summary";
+        const preview = item.text.length > 60 ? item.text.slice(0, 60) + "..." : item.text;
+        summary.textContent = preview;
+        details.appendChild(summary);
+        const content = document.createElement("div");
+        content.className = "openclaw-intermediary-content";
+        content.textContent = item.text;
+        details.appendChild(content);
+        lastBubble.parentElement?.insertBefore(details, lastBubble);
+      }
     }
     this.scrollToBottom();
   }
@@ -1214,14 +1252,38 @@ class OpenClawChatView extends ItemView {
     return msg?.text ?? "";
   }
 
+  private collapseCurrentStream(text: string): void {
+    // Replace the current stream bubble with a collapsed intermediary
+    if (this.streamEl) {
+      this.streamEl.remove();
+      this.streamEl = null;
+    }
+    const details = document.createElement("details");
+    details.className = "openclaw-intermediary";
+    const summary = document.createElement("summary");
+    summary.className = "openclaw-intermediary-summary";
+    // Show first ~60 chars as preview
+    const preview = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    summary.textContent = preview;
+    details.appendChild(summary);
+    const content = document.createElement("div");
+    content.className = "openclaw-intermediary-content";
+    content.textContent = text;
+    details.appendChild(content);
+    this.messagesEl.appendChild(details);
+  }
+
   private updateStreamBubble(): void {
     if (!this.streamText) return;
+    // Only show text after the last cut point
+    const visibleText = this.streamText.slice(this.lastCutIndex);
+    if (!visibleText) return;
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
       this.scrollToBottom();
     }
     this.streamEl.empty();
-    this.streamEl.createDiv({ text: this.streamText, cls: "openclaw-msg-text" });
+    this.streamEl.createDiv({ text: visibleText, cls: "openclaw-msg-text" });
     this.scrollToBottom();
   }
 
