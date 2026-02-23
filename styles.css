@@ -207,6 +207,7 @@
   border: none;
   min-height: 40px;
   overflow: hidden;
+  margin-bottom: 0;
 }
 
 .openclaw-input {
@@ -236,6 +237,23 @@
 }
 
 /* Send button: circular, accent */
+.openclaw-reconnect-btn {
+  background: none;
+  border: none;
+  color: var(--text-error, #e34);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+
+.openclaw-reconnect-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
 .openclaw-send-btn {
   width: 32px;
   height: 32px;
@@ -308,18 +326,37 @@
 /* Attachment preview */
 .openclaw-attach-preview {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 6px 10px 2px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
+.openclaw-attach-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 4px 8px 4px 4px;
+  max-width: 200px;
+}
+
+.openclaw-attach-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .openclaw-attach-name {
-  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11px;
 }
 
 .openclaw-attach-remove {
@@ -328,8 +365,9 @@
   color: var(--text-faint);
   cursor: pointer;
   font-size: 14px;
-  padding: 0 4px;
+  padding: 0 2px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .openclaw-attach-remove:hover {

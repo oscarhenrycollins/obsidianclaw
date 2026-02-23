@@ -599,16 +599,18 @@ class OpenClawChatView extends ItemView {
   private messagesEl!: HTMLElement;
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
+  private reconnectBtn!: HTMLButtonElement;
   private abortBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private messages: ChatMessage[] = [];
   private streamText: string | null = null;
   private streamRunId: string | null = null;
+  private compactTimer: ReturnType<typeof setTimeout> | null = null;
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
-  private pendingAttachment: { name: string; content: string; vaultPath?: string } | null = null;
+  private pendingAttachments: { name: string; content: string; vaultPath?: string }[] = [];
   private sending = false;
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
@@ -659,7 +661,7 @@ class OpenClawChatView extends ItemView {
     attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
     this.fileInputEl = inputArea.createEl("input", {
       cls: "openclaw-file-input",
-      attr: { type: "file", accept: "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css" },
+      attr: { type: "file", accept: "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css", multiple: "true" },
     });
     this.fileInputEl.style.display = "none";
     this.fileInputEl.addEventListener("change", () => this.handleFileSelect());
@@ -677,6 +679,14 @@ class OpenClawChatView extends ItemView {
     const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
     this.sendBtn = sendWrapper.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
     this.sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+    this.reconnectBtn = sendWrapper.createEl("button", { cls: "openclaw-reconnect-btn", attr: { "aria-label": "Reconnect" } });
+    this.reconnectBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    this.reconnectBtn.style.display = "none";
+    this.reconnectBtn.addEventListener("click", () => {
+      // Open plugin settings
+      (this.app as any).setting?.open?.();
+      (this.app as any).setting?.openTabById?.("openclaw");
+    });
     this.statusEl = sendWrapper.createSpan("openclaw-status-dot");
 
     // Events
@@ -697,6 +707,24 @@ class OpenClawChatView extends ItemView {
       }
     });
     this.inputEl.addEventListener("input", () => this.autoResize());
+    this.inputEl.addEventListener("focus", () => {
+      setTimeout(() => {
+        this.inputEl.scrollIntoView({ block: "end", behavior: "smooth" });
+      }, 300);
+    });
+    // Clipboard paste: capture images from clipboard
+    this.inputEl.addEventListener("paste", (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) this.handlePastedFile(file);
+          return;
+        }
+      }
+    });
     this.sendBtn.addEventListener("click", () => this.sendMessage());
     this.abortBtn.addEventListener("click", () => this.abortMessage());
 
@@ -717,7 +745,21 @@ class OpenClawChatView extends ItemView {
   updateStatus(): void {
     if (!this.statusEl) return;
     this.statusEl.removeClass("connected", "disconnected");
-    this.statusEl.addClass(this.plugin.gatewayConnected ? "connected" : "disconnected");
+    const connected = this.plugin.gatewayConnected;
+    this.statusEl.addClass(connected ? "connected" : "disconnected");
+
+    // Swap send button for reconnect when disconnected
+    if (connected) {
+      this.sendBtn.style.display = "";
+      if (this.reconnectBtn) this.reconnectBtn.style.display = "none";
+      this.inputEl.disabled = false;
+      this.inputEl.placeholder = "Message...";
+    } else {
+      this.sendBtn.style.display = "none";
+      if (this.reconnectBtn) this.reconnectBtn.style.display = "";
+      this.inputEl.disabled = true;
+      this.inputEl.placeholder = "Disconnected";
+    }
   }
 
   async loadHistory(): Promise<void> {
@@ -808,7 +850,7 @@ class OpenClawChatView extends ItemView {
 
   async sendMessage(): Promise<void> {
     let text = this.inputEl.value.trim();
-    if (!text && !this.pendingAttachment) return;
+    if (!text && this.pendingAttachments.length === 0) return;
     if (this.sending) return;
     if (!this.plugin.gateway?.connected) {
       new Notice("Not connected to OpenClaw gateway");
@@ -824,15 +866,19 @@ class OpenClawChatView extends ItemView {
     let fullMessage = text;
     const displayText = text;
     const userImages: string[] = [];
-    if (this.pendingAttachment) {
-      fullMessage = (text ? text + "\n\n" : "") + this.pendingAttachment.content;
-      if (!text) text = `📎 ${this.pendingAttachment.name}`;
-      // Get a displayable resource URL for the image preview
-      if (this.pendingAttachment.vaultPath) {
-        const resourcePath = this.app.vault.adapter.getResourcePath(this.pendingAttachment.vaultPath);
-        if (resourcePath) userImages.push(resourcePath);
+    if (this.pendingAttachments.length > 0) {
+      const attachParts = this.pendingAttachments.map(a => a.content);
+      fullMessage = (text ? text + "\n\n" : "") + attachParts.join("\n\n");
+      if (!text) text = `📎 ${this.pendingAttachments.map(a => a.name).join(", ")}`;
+      for (const att of this.pendingAttachments) {
+        if (att.vaultPath) {
+          try {
+            const resourcePath = this.app.vault.adapter.getResourcePath(att.vaultPath);
+            if (resourcePath) userImages.push(resourcePath);
+          } catch { /* ignore */ }
+        }
       }
-      this.pendingAttachment = null;
+      this.pendingAttachments = [];
       this.attachPreviewEl.style.display = "none";
     }
 
@@ -844,7 +890,18 @@ class OpenClawChatView extends ItemView {
     this.streamText = "";
     this.abortBtn.style.display = "";
     this.typingEl.style.display = "";
+    // Update thinking text and show immediately
+    const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
+    if (thinkText) thinkText.textContent = "Thinking";
     this.scrollToBottom();
+
+    // Fallback: if no events at all after 15s, show generic status
+    this.compactTimer = setTimeout(() => {
+      if (this.streamRunId === runId && !this.streamText) {
+        const tt = this.typingEl.querySelector(".openclaw-typing-text");
+        if (tt && tt.textContent === "Thinking") tt.textContent = "Still thinking";
+      }
+    }, 15000);
 
     try {
       await this.plugin.gateway.request("chat.send", {
@@ -854,6 +911,7 @@ class OpenClawChatView extends ItemView {
         idempotencyKey: runId,
       });
     } catch (e) {
+      if (this.compactTimer) clearTimeout(this.compactTimer);
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
       this.streamRunId = null;
       this.streamText = null;
@@ -878,64 +936,151 @@ class OpenClawChatView extends ItemView {
   }
 
   async handleFileSelect(): Promise<void> {
-    const file = this.fileInputEl.files?.[0];
-    if (!file) return;
+    const files = this.fileInputEl.files;
+    if (!files || files.length === 0) return;
 
-    try {
-      const isImage = file.type.startsWith("image/");
-      const isText = file.type.startsWith("text/") ||
-        ["application/json", "application/yaml", "application/xml", "application/javascript"].includes(file.type) ||
-        /\.(md|txt|json|csv|yaml|yml|js|ts|py|html|css|xml|toml|ini|sh|log)$/i.test(file.name);
+    for (const file of Array.from(files)) {
+      try {
+        const isImage = file.type.startsWith("image/");
+        const isText = file.type.startsWith("text/") ||
+          ["application/json", "application/yaml", "application/xml", "application/javascript"].includes(file.type) ||
+          /\.(md|txt|json|csv|yaml|yml|js|ts|py|html|css|xml|toml|ini|sh|log)$/i.test(file.name);
 
-      if (isImage) {
-        // Save image to vault and reference by path (never send base64 inline — it fills the context window)
-        const arrayBuf = await file.arrayBuffer();
-        const attachDir = "openclaw-attachments";
-        if (!this.app.vault.getAbstractFileByPath(attachDir)) {
-          await this.app.vault.createFolder(attachDir);
+        if (isImage) {
+          const arrayBuf = await file.arrayBuffer();
+          const attachDir = "openclaw-attachments";
+          if (!this.app.vault.getAbstractFileByPath(attachDir)) {
+            await this.app.vault.createFolder(attachDir);
+          }
+          const timestamp = Date.now();
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const attachPath = `${attachDir}/${timestamp}-${safeName}`;
+          await this.app.vault.createBinary(attachPath, arrayBuf);
+          const vaultPath = (this.app.vault.adapter as any).basePath || "";
+          const absPath = vaultPath ? `${vaultPath}/${attachPath}` : attachPath;
+          this.pendingAttachments.push({
+            name: file.name,
+            content: `[Attached image: ${file.name} (${file.type}, ${Math.round(file.size/1024)}KB)]\nFile saved at: ${absPath}`,
+            vaultPath: attachPath,
+          });
+        } else if (isText) {
+          const content = await file.text();
+          const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n...(truncated)" : content;
+          this.pendingAttachments.push({
+            name: file.name,
+            content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
+          });
+        } else {
+          this.pendingAttachments.push({
+            name: file.name,
+            content: `[Attached file: ${file.name} (${file.type || "unknown type"}, ${Math.round(file.size/1024)}KB)]`,
+          });
         }
-        const timestamp = Date.now();
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const attachPath = `${attachDir}/${timestamp}-${safeName}`;
-        await this.app.vault.createBinary(attachPath, arrayBuf);
-        // Get the absolute vault path for the agent
-        const vaultPath = (this.app.vault.adapter as any).basePath || "";
-        const absPath = vaultPath ? `${vaultPath}/${attachPath}` : attachPath;
-        this.pendingAttachment = {
-          name: file.name,
-          content: `[Attached image: ${file.name} (${file.type}, ${Math.round(file.size/1024)}KB)]\nFile saved at: ${absPath}`,
-          vaultPath: attachPath,
-        };
-      } else if (isText) {
-        const content = await file.text();
-        const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n...(truncated)" : content;
-        this.pendingAttachment = {
-          name: file.name,
-          content: `File: ${file.name}\n\`\`\`\n${truncated}\n\`\`\``,
-        };
-      } else {
-        // Binary: describe it, can't meaningfully send
-        this.pendingAttachment = {
-          name: file.name,
-          content: `[Attached file: ${file.name} (${file.type || "unknown type"}, ${Math.round(file.size/1024)}KB)]`,
-        };
+      } catch (e) {
+        new Notice(`Failed to attach ${file.name}: ${e}`);
       }
-
-      // Show preview
-      this.attachPreviewEl.empty();
-      this.attachPreviewEl.style.display = "flex";
-      this.attachPreviewEl.createSpan({ text: `📎 ${file.name}`, cls: "openclaw-attach-name" });
-      const removeBtn = this.attachPreviewEl.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
-      removeBtn.addEventListener("click", () => {
-        this.pendingAttachment = null;
-        this.attachPreviewEl.style.display = "none";
-      });
-    } catch (e) {
-      new Notice(`Failed to attach file: ${e}`);
     }
 
-    // Reset input so the same file can be re-selected
+    // Update preview
+    this.renderAttachPreview();
     this.fileInputEl.value = "";
+  }
+
+  async handlePastedFile(file: File): Promise<void> {
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const attachDir = "openclaw-attachments";
+      if (!this.app.vault.getAbstractFileByPath(attachDir)) {
+        await this.app.vault.createFolder(attachDir);
+      }
+      const timestamp = Date.now();
+      const ext = file.type.split("/")[1] || "png";
+      const attachPath = `${attachDir}/${timestamp}-clipboard.${ext}`;
+      await this.app.vault.createBinary(attachPath, arrayBuf);
+      const vaultPath = (this.app.vault.adapter as any).basePath || "";
+      const absPath = vaultPath ? `${vaultPath}/${attachPath}` : attachPath;
+      this.pendingAttachments.push({
+        name: `clipboard.${ext}`,
+        content: `[Attached image: clipboard.${ext} (${file.type}, ${Math.round(file.size/1024)}KB)]\nFile saved at: ${absPath}`,
+        vaultPath: attachPath,
+      });
+      this.renderAttachPreview();
+    } catch (e) {
+      new Notice(`Failed to paste image: ${e}`);
+    }
+  }
+
+  private renderAttachPreview(): void {
+    this.attachPreviewEl.empty();
+    if (this.pendingAttachments.length === 0) {
+      this.attachPreviewEl.style.display = "none";
+      return;
+    }
+    this.attachPreviewEl.style.display = "flex";
+
+    for (let i = 0; i < this.pendingAttachments.length; i++) {
+      const att = this.pendingAttachments[i];
+      const chip = this.attachPreviewEl.createDiv("openclaw-attach-chip");
+
+      // Show thumbnail for images
+      if (att.vaultPath) {
+        try {
+          const src = this.app.vault.adapter.getResourcePath(att.vaultPath);
+          if (src) chip.createEl("img", { cls: "openclaw-attach-thumb", attr: { src } });
+        } catch { /* ignore */ }
+      }
+
+      chip.createSpan({ text: att.name, cls: "openclaw-attach-name" });
+      const removeBtn = chip.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
+      const idx = i;
+      removeBtn.addEventListener("click", () => {
+        this.pendingAttachments.splice(idx, 1);
+        this.renderAttachPreview();
+      });
+    }
+  }
+
+  handleStreamEvent(payload: any): void {
+    if (!this.streamRunId) return;
+    const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+    if (!typingText) return;
+
+    const labels: Record<string, string> = {
+      exec: "Running command",
+      read: "Reading file", Read: "Reading file",
+      write: "Writing file", Write: "Writing file",
+      edit: "Editing file", Edit: "Editing file",
+      web_search: "Searching the web",
+      web_fetch: "Fetching page",
+      browser: "Using browser",
+      image: "Viewing image",
+      memory_search: "Searching memory",
+      memory_get: "Reading memory",
+      message: "Sending message",
+      tts: "Speaking",
+      sessions_spawn: "Spawning sub-agent",
+    };
+
+    // Handle tool events from stream or agent payloads
+    const toolName = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
+    const phase = payload.data?.phase || payload.phase || "";
+    const stream = payload.stream || "";
+    const state = payload.state || payload.data?.state || "";
+
+    if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
+      if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
+      this.typingEl.style.display = "";
+      typingText.textContent = labels[toolName] || (toolName ? `Using ${toolName}` : "Working");
+    } else if ((stream === "tool" || toolName) && phase === "result") {
+      typingText.textContent = "Thinking";
+    } else if (stream === "job" && state === "started") {
+      typingText.textContent = "Thinking";
+      this.typingEl.style.display = "";
+    } else if (stream === "compaction" || state === "compacting") {
+      typingText.textContent = "Compacting memory";
+      this.typingEl.style.display = "";
+    }
+    // agent events with state "assistant" are just streaming status, ignore
   }
 
   handleChatEvent(payload: any): void {
@@ -945,11 +1090,12 @@ class OpenClawChatView extends ItemView {
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
     if (payload.state === "delta") {
-      // Switch from "Thinking" to "Typing" once streaming begins
-      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-      if (typingText) typingText.textContent = "Typing";
-      const text = this.extractText(payload.message);
-      if (typeof text === "string") {
+      // Clear timer, hide typing indicator once we have text to show
+      if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
+      this.typingEl.style.display = "none";
+      // Extract text from delta - could be string or content blocks
+      const text = this.extractDeltaText(payload.message);
+      if (text) {
         this.streamText = text;
         this.updateStreamBubble();
       }
@@ -975,6 +1121,7 @@ class OpenClawChatView extends ItemView {
   }
 
   private finishStream(): void {
+    if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
     this.streamRunId = null;
     this.streamText = null;
     this.streamEl = null;
@@ -983,6 +1130,22 @@ class OpenClawChatView extends ItemView {
     // Reset for next message
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
     if (typingText) typingText.textContent = "Thinking";
+  }
+
+  private extractDeltaText(msg: any): string {
+    if (typeof msg === "string") return msg;
+    // Gateway sends {role, content, timestamp} where content is [{type:"text", text:"..."}]
+    const content = msg?.content ?? msg;
+    if (Array.isArray(content)) {
+      let text = "";
+      for (const block of content) {
+        if (typeof block === "string") { text += block; }
+        else if (block?.text) { text += (text ? "\n" : "") + block.text; }
+      }
+      return text;
+    }
+    if (typeof content === "string") return content;
+    return msg?.text ?? "";
   }
 
   private updateStreamBubble(): void {
@@ -1165,6 +1328,8 @@ export default class OpenClawPlugin extends Plugin {
       onEvent: (evt) => {
         if (evt.event === "chat") {
           this.chatView?.handleChatEvent(evt.payload);
+        } else if (evt.event === "stream" || evt.event === "agent") {
+          this.chatView?.handleStreamEvent(evt.payload);
         }
       },
     });
