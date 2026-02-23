@@ -67,6 +67,9 @@
   word-wrap: break-word;
   overflow-wrap: break-word;
   animation: msgIn 0.15s ease-out;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 
 @keyframes msgIn {
@@ -83,6 +86,11 @@
 }
 
 .openclaw-msg-user .openclaw-msg-text {
+  color: var(--text-on-accent);
+}
+
+.openclaw-msg-user ::selection {
+  background: rgba(255, 255, 255, 0.35);
   color: var(--text-on-accent);
 }
 
@@ -146,6 +154,14 @@
   padding-left: 10px;
   margin: 4px 0;
   color: var(--text-muted);
+}
+
+/* Tool call items (always visible, persistent) */
+.openclaw-tool-item {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  line-height: 1.4;
 }
 
 /* Typing indicator */

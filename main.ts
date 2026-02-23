@@ -319,7 +319,7 @@ class GatewayClient {
       scopes: SCOPES,
       auth,
       device,
-      caps: [],
+      caps: ["tool-events"],
     };
 
     this.request("connect", params)
@@ -606,6 +606,9 @@ class OpenClawChatView extends ItemView {
   private streamText: string | null = null;
   private streamRunId: string | null = null;
   private compactTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastDeltaTime: number = 0;
+  private workingTimer: ReturnType<typeof setTimeout> | null = null;
+  private currentToolCalls: string[] = [];
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -1040,47 +1043,87 @@ class OpenClawChatView extends ItemView {
     }
   }
 
+  private appendToolCall(label: string): void {
+    // Tool calls are always visible, flat in the chat, before the stream bubble
+    const el = document.createElement("div");
+    el.className = "openclaw-tool-item";
+    el.textContent = label;
+    if (this.streamEl) {
+      this.streamEl.parentElement?.insertBefore(el, this.streamEl);
+    } else {
+      this.messagesEl.appendChild(el);
+    }
+    this.scrollToBottom();
+  }
+
   handleStreamEvent(payload: any): void {
     if (!this.streamRunId) return;
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
     if (!typingText) return;
 
-    const labels: Record<string, string> = {
-      exec: "Running command",
-      read: "Reading file", Read: "Reading file",
-      write: "Writing file", Write: "Writing file",
-      edit: "Editing file", Edit: "Editing file",
-      web_search: "Searching the web",
-      web_fetch: "Fetching page",
-      browser: "Using browser",
-      image: "Viewing image",
-      memory_search: "Searching memory",
-      memory_get: "Reading memory",
-      message: "Sending message",
-      tts: "Speaking",
-      sessions_spawn: "Spawning sub-agent",
-    };
+    const state = payload.state || "";
 
-    // Handle tool events from stream or agent payloads
+    // Agent "assistant" events = agent is actively working
+    if (state === "assistant") {
+      const timeSinceDelta = Date.now() - this.lastDeltaTime;
+      if (this.streamText && timeSinceDelta > 1500 && this.typingEl.style.display === "none") {
+        if (!this.workingTimer) {
+          this.workingTimer = setTimeout(() => {
+            if (this.streamRunId && this.typingEl.style.display === "none") {
+              typingText.textContent = "Working";
+              this.typingEl.style.display = "";
+            }
+            this.workingTimer = null;
+          }, 500);
+        }
+      } else if (!this.streamText && !this.lastDeltaTime) {
+        this.typingEl.style.display = "";
+      }
+    } else if (state === "lifecycle") {
+      if (!this.streamText) {
+        typingText.textContent = "Thinking";
+        this.typingEl.style.display = "";
+      }
+    }
+
+    // Handle explicit tool events (persistent in chat + typing indicator)
     const toolName = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
     const phase = payload.data?.phase || payload.phase || "";
     const stream = payload.stream || "";
-    const state = payload.state || payload.data?.state || "";
+
+    const labels: Record<string, string> = {
+      exec: "🔧 Running command",
+      read: "📄 Reading file", Read: "📄 Reading file",
+      write: "✏️ Writing file", Write: "✏️ Writing file",
+      edit: "✏️ Editing file", Edit: "✏️ Editing file",
+      web_search: "🔍 Searching the web",
+      web_fetch: "🌐 Fetching page",
+      browser: "🌐 Using browser",
+      image: "👁️ Viewing image",
+      memory_search: "🧠 Searching memory",
+      memory_get: "🧠 Reading memory",
+      message: "💬 Sending message",
+      tts: "🔊 Speaking",
+      sessions_spawn: "🤖 Spawning sub-agent",
+    };
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
-      this.typingEl.style.display = "";
-      typingText.textContent = labels[toolName] || (toolName ? `Using ${toolName}` : "Working");
+      if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
+      const label = labels[toolName] || (toolName ? `Using ${toolName}` : "Working");
+      this.currentToolCalls.push(label);
+      this.appendToolCall(label);
+      // Hide typing indicator since the tool call item provides feedback
+      this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
-      typingText.textContent = "Thinking";
-    } else if (stream === "job" && state === "started") {
+      // Tool finished, show thinking while waiting for next action
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
     } else if (stream === "compaction" || state === "compacting") {
-      typingText.textContent = "Compacting memory";
-      this.typingEl.style.display = "";
+      this.currentToolCalls.push("Compacting memory");
+      this.appendToolCall("Compacting memory");
+      this.typingEl.style.display = "none";
     }
-    // agent events with state "assistant" are just streaming status, ignore
   }
 
   handleChatEvent(payload: any): void {
@@ -1090,8 +1133,10 @@ class OpenClawChatView extends ItemView {
     if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
 
     if (payload.state === "delta") {
-      // Clear timer, hide typing indicator once we have text to show
+      // Clear timers, hide typing indicator once we have text to show
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
+      if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
+      this.lastDeltaTime = Date.now();
       this.typingEl.style.display = "none";
       // Extract text from delta - could be string or content blocks
       const text = this.extractDeltaText(payload.message);
@@ -1100,8 +1145,12 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
+      const toolCalls = [...this.currentToolCalls];
       this.finishStream();
-      this.loadHistory();
+      this.loadHistory().then(() => {
+        // Re-insert tool calls before the last assistant message
+        if (toolCalls.length > 0) this.insertToolCallsBeforeLastAssistant(toolCalls);
+      });
     } else if (payload.state === "aborted") {
       if (this.streamText) {
         this.messages.push({ role: "assistant", text: this.streamText, images: [], timestamp: Date.now() });
@@ -1122,14 +1171,31 @@ class OpenClawChatView extends ItemView {
 
   private finishStream(): void {
     if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
+    if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
     this.streamRunId = null;
     this.streamText = null;
+    this.lastDeltaTime = 0;
+    this.currentToolCalls = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
-    // Reset for next message
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
     if (typingText) typingText.textContent = "Thinking";
+  }
+
+  private insertToolCallsBeforeLastAssistant(toolCalls: string[]): void {
+    if (toolCalls.length === 0) return;
+    const bubbles = this.messagesEl.querySelectorAll(".openclaw-msg-assistant");
+    const lastBubble = bubbles[bubbles.length - 1];
+    if (!lastBubble) return;
+
+    for (const label of toolCalls) {
+      const el = document.createElement("div");
+      el.className = "openclaw-tool-item";
+      el.textContent = label;
+      lastBubble.parentElement?.insertBefore(el, lastBubble);
+    }
+    this.scrollToBottom();
   }
 
   private extractDeltaText(msg: any): string {
@@ -1326,6 +1392,15 @@ export default class OpenClawPlugin extends Plugin {
         }
       },
       onEvent: (evt) => {
+        // Log tool events and state changes
+        if (evt.event === "agent") {
+          const stream = evt.payload?.stream || "";
+          if (stream === "tool" || stream === "lifecycle" || stream === "compaction") {
+            console.log("[OC]", stream, evt.payload?.data?.name || evt.payload?.data?.phase || "");
+          }
+        } else if (evt.event === "chat") {
+          console.log("[OC]", "chat", evt.payload?.state || "");
+        }
         if (evt.event === "chat") {
           this.chatView?.handleChatEvent(evt.payload);
         } else if (evt.event === "stream" || evt.event === "agent") {
