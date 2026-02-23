@@ -7,102 +7,44 @@ Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs,
 ## Features
 
 - **Chat sidebar** — Talk to your AI agent from any Obsidian tab
-- **Streaming responses** — See replies appear in real-time as they're generated
-- **Markdown rendering** — Code blocks, lists, links, and formatting rendered natively
-- **Message history** — Full conversation history synced from the gateway
+- **Streaming responses** — See replies appear in real-time
+- **Markdown rendering** — Code blocks, lists, links rendered natively
+- **Tool call visibility** — See files read/written, commands run, pages fetched
+- **Cross-device sync** — Chat history and tool calls persist via Obsidian Sync
 - **"Ask about this note"** — Send any note as context with one command
-- **Auto-reconnect** — Handles disconnections gracefully with exponential backoff
-- **Device authentication** — Ed25519 keypair for secure scope authorization
-- **Tool call visibility** — See exactly what your agent does: files read/written, commands run, pages fetched — with clickable links
-- **Cross-device sync** — Tool calls and chat history persist across devices via Obsidian Sync
 - **Dark/light theme** — Follows your Obsidian theme automatically
 
-## Requirements
+## Install
 
-- [OpenClaw](https://openclaw.ai) gateway running on a machine with [Tailscale](https://tailscale.com)
-- [Tailscale](https://tailscale.com/download) installed on all devices (creates a secure private network)
-- Gateway auth token (from `~/.openclaw/openclaw.json`)
+> **Beta:** Pending approval in the Obsidian Community Plugin store ([PR #10465](https://github.com/obsidianmd/obsidian-releases/pull/10465)). Install via BRAT for now.
 
-## Installation
+1. In Obsidian, go to **Settings → Community Plugins → Browse**
+2. Search **BRAT** → Install → Enable
+3. Go to **Settings → BRAT → Add Beta Plugin**
+4. Enter: `oscarhenrycollins/obsidianclaw`
 
-The plugin is pending approval in the Obsidian Community Plugin store ([PR #10465](https://github.com/obsidianmd/obsidian-releases/pull/10465)). In the meantime, install via **BRAT**:
+That's it. BRAT installs the plugin and keeps it updated. Works on desktop and mobile.
 
-1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Obsidian Community Plugins
-2. Open BRAT settings → **Add Beta Plugin**
-3. Enter: `oscarhenrycollins/obsidianclaw`
-4. BRAT installs the latest release automatically and keeps it updated
+## Connect
 
-This works on **both desktop and mobile** — install BRAT on each device, add the same repo, and you're set.
+The setup wizard opens automatically after install:
 
-## Setup
+1. **Gateway URL:** `ws://<your-tailscale-ip>:18789`
+2. **Auth Token:** from `~/.openclaw/openclaw.json` → `gateway.auth.token`
+3. Click **Test connection**
+4. **Approve the device** from the OpenClaw dashboard or CLI:
+   ```bash
+   openclaw devices list
+   openclaw devices approve <requestId>
+   ```
 
-### 1. Configure the gateway for Tailscale
+Done. The device is remembered permanently.
 
-On the machine running OpenClaw:
+### Prerequisites
 
-```bash
-# Bind gateway to Tailscale interface
-openclaw config set gateway.bind tailnet
-
-# Restart to apply
-openclaw gateway restart
-
-# Get your Tailscale IP
-tailscale ip -4
-# → 100.x.x.x
-```
-
-### 2. Connect the plugin
-
-Open Obsidian → the setup wizard runs automatically:
-
-- **Gateway URL:** `ws://100.x.x.x:18789` (your Tailscale IP from step 1)
-- **Auth Token:** from `~/.openclaw/openclaw.json` → `gateway.auth.token`
-- Click **Test connection**
-
-### 3. Approve device pairing
-
-Each new device generates a unique Ed25519 keypair and requests pairing. Approve it from the OpenClaw dashboard (`http://100.x.x.x:18789/`), or via CLI:
-
-```bash
-openclaw devices list
-openclaw devices approve <requestId>
-```
-
-After approval, the device is remembered permanently. Pair once per device — it syncs across reinstalls via Obsidian Sync.
-
-## Security Architecture
-
-ObsidianClaw uses **three layers of security**:
-
-### Layer 1: Network Encryption (Tailscale/WireGuard)
-
-All traffic between devices travels over Tailscale's WireGuard mesh VPN. Even though the WebSocket uses `ws://` (not `wss://`), the underlying network traffic is encrypted end-to-end. Only your authenticated Tailscale devices can see each other.
-
-### Layer 2: Gateway Token Authentication
-
-Every connection requires a valid auth token that matches the gateway's configured `gateway.auth.token`. This prevents unauthorized access even within your Tailnet.
-
-### Layer 3: Device Fingerprinting (Ed25519)
-
-Each ObsidianClaw installation generates a unique Ed25519 keypair:
-
-- **Private key** stays in your Obsidian vault's plugin data (never transmitted)
-- **Public key** is registered with the gateway during pairing
-- Every connection is signed with a timestamp + nonce to prevent replay attacks
-- Device pairing requires explicit approval — no device can self-authorize
-
-This is the same security model used by OpenClaw's official Control UI.
-
-### What's stored locally
-
-| Data | Location | Purpose |
-|------|----------|---------|
-| Auth token | Plugin data (`data.json`) | Gateway authentication |
-| Ed25519 keypair | Plugin data (`data.json`) | Device identity |
-| Gateway URL | Plugin data (`data.json`) | Connection target |
-
-Your token and keys never leave your machine except to authenticate with your own gateway.
+- [OpenClaw](https://openclaw.ai) gateway running somewhere (Mac, Linux, Raspberry Pi)
+- [Tailscale](https://tailscale.com/download) on all your devices
+- Gateway bound to Tailscale: `openclaw config set gateway.bind tailnet && openclaw gateway restart`
 
 ## Commands
 
@@ -115,60 +57,15 @@ Your token and keys never leave your machine except to authenticate with your ow
 
 ## Troubleshooting
 
-### "Could not connect"
+**"Could not connect"** — Is Tailscale running on both devices? Is the gateway URL correct (`ws://<tailscale-ip>:18789`)? Is the token right?
 
-1. **Is OpenClaw running?** Check with `openclaw gateway status`
-2. **Correct URL?** Should be `ws://<tailscale-ip>:18789`
-3. **Token correct?** Copy from `~/.openclaw/openclaw.json` → `gateway.auth.token`
-4. **Tailscale connected?** Run `tailscale status` on both machines
-5. **On mobile?** Make sure Tailscale VPN is active on your phone
+**"Pairing required"** — Every new device needs a one-time approval. Run `openclaw devices list` and `openclaw devices approve <requestId>` on your gateway machine, or approve from the dashboard.
 
-### "Pairing required"
+**Switching devices** — Force-quit Obsidian and reopen. It picks up synced data from the other device.
 
-First connection from a new device needs approval:
+## Security
 
-```bash
-openclaw devices list          # Find the pending request
-openclaw devices approve <id>  # Approve it
-```
-
-### "Missing scope: operator.write"
-
-The device isn't paired or was paired without proper scopes. Remove and re-pair:
-
-```bash
-openclaw devices list
-openclaw devices revoke --device <deviceId> --role operator
-```
-
-Then reconnect from Obsidian — a new pairing request will be created.
-
-### Switching between devices
-
-ObsidianClaw works on both desktop and mobile. When switching between devices:
-
-1. **Force-quit Obsidian** on the device you're switching to (swipe up on iOS, Cmd+Q on Mac)
-2. **Reopen Obsidian** — it picks up synced data and loads the latest chat history
-3. Everything works perfectly from that point — full history, tool calls, and streaming
-
-This is because tool call events are only sent to the device that initiated the request. The other device syncs the results via Obsidian Sync's `data.json`. A quick restart ensures it loads the latest state.
-
-### Messages not appearing
-
-If you send a message but don't see a response streaming:
-- The plugin shares the `main` session with other channels (Telegram, etc.)
-- Responses should stream in real-time via the chat sidebar
-- Try disconnecting and reconnecting via Settings → OpenClaw → Reconnect
-
-## Configuration
-
-Access settings via Obsidian Settings → OpenClaw:
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Gateway URL | `ws://100.x.x.x:18789` | Tailscale WebSocket URL to your gateway |
-| Auth Token | (empty) | Gateway authentication token |
-| Session Key | `main` | Which session to chat in |
+Three layers: **Tailscale** encrypts all traffic (WireGuard VPN), **gateway token** authenticates connections, and **Ed25519 device keys** fingerprint each device. Your keys never leave your machine.
 
 ## Building from Source
 
@@ -179,14 +76,14 @@ npm install
 npm run build
 ```
 
-Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/openclaw/` folder.
+Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/openclaw/`.
 
 ## Links
 
 - [ObsidianClaw](https://obsidianclaw.ai) — Official site
 - [OpenClaw](https://openclaw.ai) — The AI agent framework
 - [Bot Setup Guide](https://botsetupguide.com) — Full setup walkthrough
-- [Humanity Labs](https://humanitylabs.org) — Creators of ObsidianClaw
+- [Humanity Labs](https://humanitylabs.org) — Built by Humanity Labs
 
 ## License
 
