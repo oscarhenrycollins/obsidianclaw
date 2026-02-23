@@ -14,7 +14,7 @@ import {
 
 // ─── Settings ────────────────────────────────────────────────────────
 
-type StreamItem = { type: "tool"; label: string; url?: string } | { type: "text"; text: string };
+type StreamItem = { type: "tool"; label: string; url?: string; textPos?: number } | { type: "text"; text: string };
 
 interface OpenClawSettings {
   gatewayUrl: string;
@@ -613,9 +613,7 @@ class OpenClawChatView extends ItemView {
   private lastDeltaTime: number = 0;
   private workingTimer: ReturnType<typeof setTimeout> | null = null;
   private currentToolCalls: string[] = [];
-  private intermediaryTexts: string[] = [];
-  private lastCutIndex: number = 0;
-  /** Ordered list of intermediary items (tool calls + text collapses) for re-rendering after loadHistory */
+  /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
   private streamItems: StreamItem[] = [];
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
@@ -623,6 +621,7 @@ class OpenClawChatView extends ItemView {
   private fileInputEl!: HTMLInputElement;
   private pendingAttachments: { name: string; content: string; vaultPath?: string }[] = [];
   private sending = false;
+  private bannerEl!: HTMLElement;
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
     super(leaf);
@@ -649,6 +648,10 @@ class OpenClawChatView extends ItemView {
     // Header (hidden, status dot moved to input row)
     const header = container.createDiv("openclaw-chat-header");
     header.createSpan({ text: "OpenClaw", cls: "openclaw-header-title" });
+
+    // Status banner (compaction, etc.) — hidden by default
+    this.bannerEl = container.createDiv("openclaw-banner");
+    this.bannerEl.style.display = "none";
 
     // Messages area
     this.messagesEl = container.createDiv("openclaw-messages");
@@ -1111,9 +1114,9 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  private appendToolCall(label: string, url?: string): void {
+  private appendToolCall(label: string, url?: string, active = false): void {
     const el = document.createElement("div");
-    el.className = "openclaw-tool-item";
+    el.className = "openclaw-tool-item" + (active ? " openclaw-tool-active" : "");
     if (url) {
       const link = document.createElement("a");
       link.href = url;
@@ -1125,22 +1128,55 @@ class OpenClawChatView extends ItemView {
       });
       el.appendChild(link);
     } else {
-      el.textContent = label;
+      const span = document.createElement("span");
+      span.textContent = label;
+      el.appendChild(span);
     }
-    if (this.streamEl) {
-      this.streamEl.parentElement?.insertBefore(el, this.streamEl);
-    } else {
-      this.messagesEl.appendChild(el);
+    if (active) {
+      const dots = document.createElement("span");
+      dots.className = "openclaw-tool-dots";
+      dots.innerHTML = '<span class="openclaw-dot"></span><span class="openclaw-dot"></span><span class="openclaw-dot"></span>';
+      el.appendChild(dots);
     }
+    this.messagesEl.appendChild(el);
     this.scrollToBottom();
   }
 
+  private deactivateLastToolItem(): void {
+    const items = this.messagesEl.querySelectorAll(".openclaw-tool-active");
+    const last = items[items.length - 1];
+    if (last) {
+      last.removeClass("openclaw-tool-active");
+      const dots = last.querySelector(".openclaw-tool-dots");
+      if (dots) dots.remove();
+    }
+  }
+
+  private showBanner(text: string): void {
+    if (!this.bannerEl) return;
+    this.bannerEl.textContent = text;
+    this.bannerEl.style.display = "";
+  }
+
+  private hideBanner(): void {
+    if (!this.bannerEl) return;
+    this.bannerEl.style.display = "none";
+  }
+
   handleStreamEvent(payload: any): void {
-    if (!this.streamRunId) return;
+    const stream = payload.stream || "";
+    const state = payload.state || "";
+
+    // Compaction can arrive without an active stream (before user message gets processed)
+    if (!this.streamRunId) {
+      if (stream === "compaction" || state === "compacting") {
+        this.showBanner("Compacting context...");
+      }
+      return;
+    }
+
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
     if (!typingText) return;
-
-    const state = payload.state || "";
 
     // Agent "assistant" events = agent is actively working
     if (state === "assistant") {
@@ -1168,29 +1204,24 @@ class OpenClawChatView extends ItemView {
     // Handle explicit tool events (persistent in chat + typing indicator)
     const toolName = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
     const phase = payload.data?.phase || payload.phase || "";
-    const stream = payload.stream || "";
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // If there's streamed text since last cut, save it as intermediary
-      if (this.streamText && this.streamText.length > this.lastCutIndex) {
-        const chunk = this.streamText.slice(this.lastCutIndex).trim();
-        if (chunk) {
-          this.intermediaryTexts.push(chunk);
-          this.streamItems.push({ type: "text", text: chunk });
-          this.collapseCurrentStream(chunk);
-        }
-        this.lastCutIndex = this.streamText.length;
+      // Freeze the current streaming bubble in place (don't delete it)
+      if (this.streamEl) {
+        this.streamEl.removeClass("openclaw-streaming");
+        this.streamEl = null; // Next text delta will create a new bubble below the tool item
       }
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
+      const textPos = this.streamText?.length || 0;
       this.currentToolCalls.push(label);
-      this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      console.log("[OC] streamItem added:", label, "total:", this.streamItems.length);
-      this.appendToolCall(label, url);
+      this.streamItems.push({ type: "tool", label, url, textPos } as StreamItem);
+      this.appendToolCall(label, url, true); // true = active (animated)
       this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
-      // Tool finished, show thinking while waiting for next action
+      // Tool finished — remove animated dots from last tool item
+      this.deactivateLastToolItem();
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
     } else if (stream === "compaction" || state === "compacting") {
@@ -1198,6 +1229,7 @@ class OpenClawChatView extends ItemView {
       this.streamItems.push({ type: "tool", label: "Compacting memory" });
       this.appendToolCall("Compacting memory");
       this.typingEl.style.display = "none";
+      this.showBanner("Compacting context...");
     }
   }
 
@@ -1235,6 +1267,7 @@ class OpenClawChatView extends ItemView {
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
       this.lastDeltaTime = Date.now();
       this.typingEl.style.display = "none";
+      this.hideBanner();
       // Extract text from delta - could be string or content blocks
       const text = this.extractDeltaText(payload.message);
       if (text) {
@@ -1285,12 +1318,12 @@ class OpenClawChatView extends ItemView {
   private finishStream(): void {
     if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
     if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
+    this.hideBanner();
     this.streamRunId = null;
     this.streamText = null;
     this.lastDeltaTime = 0;
     this.currentToolCalls = [];
-    this.intermediaryTexts = [];
-    this.lastCutIndex = 0;
+    // (cleaned up: no more intermediary text tracking)
     this.streamItems = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
@@ -1359,31 +1392,9 @@ class OpenClawChatView extends ItemView {
     return msg?.text ?? "";
   }
 
-  private collapseCurrentStream(text: string): void {
-    // Replace the current stream bubble with a collapsed intermediary
-    if (this.streamEl) {
-      this.streamEl.remove();
-      this.streamEl = null;
-    }
-    const details = document.createElement("details");
-    details.className = "openclaw-intermediary";
-    const summary = document.createElement("summary");
-    summary.className = "openclaw-intermediary-summary";
-    // Show first ~60 chars as preview
-    const preview = text.length > 60 ? text.slice(0, 60) + "…" : text;
-    summary.textContent = preview;
-    details.appendChild(summary);
-    const content = document.createElement("div");
-    content.className = "openclaw-intermediary-content";
-    content.textContent = text;
-    details.appendChild(content);
-    this.messagesEl.appendChild(details);
-  }
-
   private updateStreamBubble(): void {
     if (!this.streamText) return;
-    // Only show text after the last cut point
-    const visibleText = this.streamText.slice(this.lastCutIndex);
+    const visibleText = this.streamText;
     if (!visibleText) return;
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
@@ -1398,10 +1409,58 @@ class OpenClawChatView extends ItemView {
     this.messagesEl.empty();
     const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
-      // Insert persisted stream items before their associated assistant message
+      // For assistant messages with stored tool items that have positions, interleave text and tools
       if (msg.role === "assistant") {
         const key = String(msg.timestamp);
         const stored = itemsMap[key];
+        const toolItems = stored?.filter((s: StreamItem) => s.type === "tool" && (s as any).textPos !== undefined) || [];
+
+        if (toolItems.length > 0 && msg.text) {
+          // Interleave: split text at tool positions, render text chunk → tool → text chunk → tool → ...
+          const positions = toolItems.map((t: any) => ({ pos: t.textPos as number, item: t }));
+          positions.sort((a: any, b: any) => a.pos - b.pos);
+
+          let lastPos = 0;
+          for (const { pos, item } of positions) {
+            const chunk = msg.text.slice(lastPos, pos).trim();
+            if (chunk) {
+              const chunkBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+              try {
+                await MarkdownRenderer.render(this.app, chunk, chunkBubble, "", this.plugin);
+              } catch {
+                chunkBubble.createDiv({ text: chunk, cls: "openclaw-msg-text" });
+              }
+            }
+            this.messagesEl.appendChild(this.createStreamItemEl(item));
+            lastPos = pos;
+          }
+          // Remaining text after last tool call
+          const remaining = msg.text.slice(lastPos).trim();
+          if (remaining) {
+            const finalBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+            try {
+              await MarkdownRenderer.render(this.app, remaining, finalBubble, "", this.plugin);
+            } catch {
+              finalBubble.createDiv({ text: remaining, cls: "openclaw-msg-text" });
+            }
+          }
+          // Render images if any
+          if (msg.images && msg.images.length > 0) {
+            const imgBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+            const imgContainer = imgBubble.createDiv("openclaw-msg-images");
+            for (const src of msg.images) {
+              const img = imgContainer.createEl("img", { cls: "openclaw-msg-img", attr: { src, loading: "lazy" } });
+              img.addEventListener("click", () => {
+                const overlay = document.body.createDiv("openclaw-img-overlay");
+                overlay.createEl("img", { attr: { src } });
+                overlay.addEventListener("click", () => overlay.remove());
+              });
+            }
+          }
+          continue; // Skip normal rendering for this message
+        }
+
+        // Fallback: no positions, insert all items before the bubble (legacy data)
         if (stored && stored.length > 0) {
           for (const item of stored) {
             this.messagesEl.appendChild(this.createStreamItemEl(item));
