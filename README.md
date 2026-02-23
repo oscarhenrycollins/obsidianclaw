@@ -19,32 +19,24 @@ Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs,
 
 ## Requirements
 
-- [OpenClaw](https://openclaw.ai) gateway running (local or remote)
-- Gateway auth token configured
-- For cross-device setups: [Tailscale](https://tailscale.com) on both machines
+- [OpenClaw](https://openclaw.ai) gateway running on a machine with [Tailscale](https://tailscale.com)
+- [Tailscale](https://tailscale.com/download) installed on all devices (creates a secure private network)
+- Gateway auth token (from `~/.openclaw/openclaw.json`)
 
-## Quick Start (Same Machine)
+## Installation
 
-If Obsidian and OpenClaw run on the same computer:
+The plugin is pending approval in the Obsidian Community Plugin store ([PR #10465](https://github.com/obsidianmd/obsidian-releases/pull/10465)). In the meantime, install via **BRAT**:
 
-1. Install the plugin from Obsidian Community Plugins (search "OpenClaw")
-2. Enable the plugin in Settings → Community Plugins
-3. The setup wizard opens automatically
-4. Gateway URL: `ws://127.0.0.1:18789`
-5. Paste your gateway auth token
-6. Click "Test connection" → you're in!
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Obsidian Community Plugins
+2. Open BRAT settings → **Add Beta Plugin**
+3. Enter: `oscarhenrycollins/obsidianclaw`
+4. BRAT installs the latest release automatically and keeps it updated
 
-Your auth token is in `~/.openclaw/openclaw.json` under `gateway.auth.token`.
+This works on **both desktop and mobile** — install BRAT on each device, add the same repo, and you're set.
 
-## Cross-Device Setup (Tailscale)
+## Setup
 
-If OpenClaw runs on a different machine (e.g., Mac mini server, Raspberry Pi):
-
-### 1. Install Tailscale on both machines
-
-Download from [tailscale.com/download](https://tailscale.com/download) and sign in with the same account.
-
-### 2. Configure the gateway
+### 1. Configure the gateway for Tailscale
 
 On the machine running OpenClaw:
 
@@ -54,35 +46,30 @@ openclaw config set gateway.bind tailnet
 
 # Restart to apply
 openclaw gateway restart
+
+# Get your Tailscale IP
+tailscale ip -4
+# → 100.x.x.x
 ```
 
-### 3. Find your Tailscale IP
+### 2. Connect the plugin
+
+Open Obsidian → the setup wizard runs automatically:
+
+- **Gateway URL:** `ws://100.x.x.x:18789` (your Tailscale IP from step 1)
+- **Auth Token:** from `~/.openclaw/openclaw.json` → `gateway.auth.token`
+- Click **Test connection**
+
+### 3. Approve device pairing
+
+Each new device generates a unique Ed25519 keypair and requests pairing. Approve it from the OpenClaw dashboard (`http://100.x.x.x:18789/`), or via CLI:
 
 ```bash
-tailscale status
-# Look for your gateway machine's 100.x.x.x IP
-```
-
-### 4. Configure the plugin
-
-In Obsidian on your other device:
-
-- Gateway URL: `ws://100.x.x.x:18789` (your Tailscale IP)
-- Token: your gateway auth token
-
-### 5. Approve device pairing
-
-First connection from a new device triggers a pairing request. On the gateway machine:
-
-```bash
-# List pending pairing requests
 openclaw devices list
-
-# Approve by request ID
 openclaw devices approve <requestId>
 ```
 
-After approval, the device is remembered permanently. You won't need to approve again unless you revoke access.
+After approval, the device is remembered permanently. Pair once per device — it syncs across reinstalls via Obsidian Sync.
 
 ## Security Architecture
 
@@ -131,9 +118,10 @@ Your token and keys never leave your machine except to authenticate with your ow
 ### "Could not connect"
 
 1. **Is OpenClaw running?** Check with `openclaw gateway status`
-2. **Correct URL?** Same machine: `ws://127.0.0.1:18789`. Remote: `ws://<tailscale-ip>:18789`
+2. **Correct URL?** Should be `ws://<tailscale-ip>:18789`
 3. **Token correct?** Copy from `~/.openclaw/openclaw.json` → `gateway.auth.token`
 4. **Tailscale connected?** Run `tailscale status` on both machines
+5. **On mobile?** Make sure Tailscale VPN is active on your phone
 
 ### "Pairing required"
 
@@ -178,7 +166,7 @@ Access settings via Obsidian Settings → OpenClaw:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Gateway URL | `ws://127.0.0.1:18789` | WebSocket URL to your gateway |
+| Gateway URL | `ws://100.x.x.x:18789` | Tailscale WebSocket URL to your gateway |
 | Auth Token | (empty) | Gateway authentication token |
 | Session Key | `main` | Which session to chat in |
 
@@ -191,7 +179,7 @@ npm install
 npm run build
 ```
 
-Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/obsidianclaw/` folder.
+Copy `main.js`, `manifest.json`, and `styles.css` to your vault's `.obsidian/plugins/openclaw/` folder.
 
 ## Links
 

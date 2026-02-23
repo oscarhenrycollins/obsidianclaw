@@ -419,24 +419,24 @@ class OnboardingModal extends Modal {
   private renderWelcome(el: HTMLElement): void {
     el.createEl("h2", { text: "Welcome to OpenClaw" });
     el.createEl("p", {
-      text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace — it can read your notes, create new ones, and search across everything.",
+      text: "This plugin connects Obsidian to your OpenClaw AI agent via Tailscale. Your vault becomes the agent's workspace — it can read your notes, create new ones, and search across everything.",
       cls: "openclaw-onboard-desc",
     });
 
     el.createEl("h3", { text: "Before you start" });
     const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
     list.createEl("li", {
-      text: "OpenClaw must be running on your machine (or reachable via Tailscale)",
+      text: "OpenClaw must be running on a machine with Tailscale",
     });
     list.createEl("li", {
-      text: "Your Obsidian vault should be the OpenClaw workspace (~/.openclaw/workspace)",
+      text: "This device must be on the same Tailscale network",
     });
     list.createEl("li", {
-      text: "If your gateway requires auth, have your token ready",
+      text: "Have your gateway auth token ready (from ~/.openclaw/openclaw.json)",
     });
 
     const info = el.createDiv("openclaw-onboard-info");
-    info.createEl("strong", { text: "Don't have OpenClaw yet? " });
+    info.createEl("strong", { text: "Need help? " });
     info.createEl("span", {
       text: "Visit botsetupguide.com for the full setup guide.",
     });
@@ -452,38 +452,41 @@ class OnboardingModal extends Modal {
   private renderConnect(el: HTMLElement): void {
     el.createEl("h2", { text: "Connect to your gateway" });
     el.createEl("p", {
-      text: "Enter your OpenClaw gateway address. If it's running on this machine, the default should work.",
+      text: "Enter your Tailscale gateway address and auth token. Find both on your gateway machine.",
       cls: "openclaw-onboard-desc",
     });
 
     // URL input
     const urlGroup = el.createDiv("openclaw-onboard-field");
-    urlGroup.createEl("label", { text: "Gateway URL" });
+    urlGroup.createEl("label", { text: "Gateway URL (Tailscale)" });
     this.urlInput = urlGroup.createEl("input", {
       type: "text",
-      value: this.plugin.settings.gatewayUrl,
-      placeholder: "ws://127.0.0.1:18789",
+      value: this.plugin.settings.gatewayUrl || "",
+      placeholder: "ws://100.x.x.x:18789",
       cls: "openclaw-onboard-input",
     });
 
     const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.innerHTML = "<strong>Local:</strong> ws://127.0.0.1:18789 &nbsp;|&nbsp; <strong>Tailscale:</strong> ws://100.x.x.x:18789";
+    urlHint.innerHTML = "Run <code>tailscale ip -4</code> on your gateway machine to get the IP";
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
-    tokenGroup.createEl("label", { text: "Auth Token (optional)" });
+    tokenGroup.createEl("label", { text: "Auth Token" });
     this.tokenInput = tokenGroup.createEl("input", {
       type: "password",
       value: this.plugin.settings.token,
-      placeholder: "Leave empty if no auth configured",
+      placeholder: "From ~/.openclaw/openclaw.json → gateway.auth.token",
       cls: "openclaw-onboard-input",
     });
+
+    const tokenHint = tokenGroup.createDiv("openclaw-onboard-hint");
+    tokenHint.innerHTML = "On your gateway machine: <code>cat ~/.openclaw/openclaw.json | grep token</code>";
 
     // Security note
     const secNote = el.createDiv("openclaw-onboard-security");
     secNote.createEl("strong", { text: "🔒 Security" });
     secNote.createEl("p", {
-      text: "Your token is stored locally in this vault's plugin data and never sent anywhere except your own gateway. All communication stays between Obsidian and your OpenClaw instance.",
+      text: "After connecting, this device will generate a unique keypair for device pairing. You'll need to approve the pairing on your gateway machine. Your token and keys are stored locally and never leave your Tailscale network.",
     });
 
     // Status
@@ -562,9 +565,9 @@ class OnboardingModal extends Modal {
   }
 
   private renderDone(el: HTMLElement): void {
-    el.createEl("h2", { text: "You're all set!" });
+    el.createEl("h2", { text: "Connected!" });
     el.createEl("p", {
-      text: "OpenClaw is connected. Click the chat icon (💬) in the left ribbon to open the sidebar and start chatting with your AI.",
+      text: "OpenClaw is connected. If this is a new device, you'll need to approve the device pairing on your gateway machine (check the OpenClaw dashboard or CLI).",
       cls: "openclaw-onboard-desc",
     });
 
@@ -573,6 +576,7 @@ class OnboardingModal extends Modal {
     const list = tips.createEl("ul", { cls: "openclaw-onboard-list" });
     list.createEl("li", { text: "Use Cmd/Ctrl+P → \"Ask about current note\" to send any note as context" });
     list.createEl("li", { text: "The agent can read and edit files in your vault directly" });
+    list.createEl("li", { text: "Tool calls are shown inline — click file paths to open them" });
     list.createEl("li", { text: "Change settings anytime in Settings → OpenClaw" });
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
