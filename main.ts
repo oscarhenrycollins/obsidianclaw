@@ -656,20 +656,17 @@ class OpenClawChatView extends ItemView {
 
     // Context bar
     const contextBar = container.createDiv("openclaw-context-bar");
-    const contextLeft = contextBar.createDiv("openclaw-context-left");
-    this.contextMeterEl = contextLeft.createDiv("openclaw-context-meter");
+    this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
     this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
-    this.contextLabelEl = contextLeft.createSpan("openclaw-context-label");
+    const contextRow = contextBar.createDiv("openclaw-context-row");
+    this.contextLabelEl = contextRow.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
-    // Info tooltip
-    const infoBtn = contextLeft.createEl("span", { cls: "openclaw-context-info", attr: { "aria-label": "Context = how much the AI remembers from this chat. Compact to free space. New session for a clean start." } });
-    infoBtn.textContent = "?";
-    const contextActions = contextBar.createDiv("openclaw-context-actions");
-    const compactBtn = contextActions.createEl("button", { cls: "openclaw-compact-btn", attr: { "aria-label": "Compact — free space, keep context" } });
-    compactBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+    const contextActions = contextRow.createDiv("openclaw-context-actions");
+    const compactBtn = contextActions.createEl("button", { cls: "openclaw-context-btn", attr: { "aria-label": "Summarize conversation to free space" } });
+    compactBtn.textContent = "Compact";
     compactBtn.addEventListener("click", () => this.compactSession());
-    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-new-session-btn", attr: { "aria-label": "New session — fresh start" } });
-    newSessionBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-context-btn", attr: { "aria-label": "Start fresh — your bot still remembers you via memory files" } });
+    newSessionBtn.textContent = "New";
     newSessionBtn.addEventListener("click", () => this.newSession());
 
     // Status banner (compaction, etc.) — hidden by default
@@ -996,7 +993,8 @@ class OpenClawChatView extends ItemView {
       const pct = Math.min(100, Math.round((used / max) * 100));
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
-      this.contextLabelEl.textContent = pct + "%";
+      const model = main.model?.replace("claude-", "").split("-")[0] || "";
+      this.contextLabelEl.textContent = `${pct}% context` + (model ? ` · ${model}` : "");
     } catch { /* ignore */ }
   }
 
@@ -1008,13 +1006,14 @@ class OpenClawChatView extends ItemView {
         sessionKey: this.plugin.settings.sessionKey,
         message: "/compact",
         deliver: false,
+        idempotencyKey: "compact-" + Date.now(),
       });
-      // Refresh after a delay
+      // Refresh after a delay to let compaction finish
       setTimeout(async () => {
         this.hideBanner();
         await this.loadHistory();
         await this.updateContextMeter();
-      }, 5000);
+      }, 8000);
     } catch (e) {
       this.hideBanner();
       new Notice(`Compact failed: ${e}`);
@@ -1028,8 +1027,8 @@ class OpenClawChatView extends ItemView {
         sessionKey: this.plugin.settings.sessionKey,
         message: "/new",
         deliver: false,
+        idempotencyKey: "new-" + Date.now(),
       });
-      // Clear local state
       this.messages = [];
       if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
       await this.plugin.saveSettings();
