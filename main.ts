@@ -1242,16 +1242,14 @@ class OpenClawChatView extends ItemView {
       if (this.streamText) {
         this.streamSplitPoints.push(this.streamText.length);
       }
-      // Freeze the current streaming bubble in place (don't delete it)
-      if (this.streamEl) {
-        this.streamEl.removeClass("openclaw-streaming");
-        this.streamEl = null; // Next text delta will create a new bubble below the tool item
-      }
+      // Don't freeze the streaming bubble — keep text flowing in one bubble
+      // Tool items render below the typing indicator
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      this.appendToolCall(label, url, true); // true = active (animated)
-      this.typingEl.style.display = "none";
+      // Show tool as the typing indicator text instead of a separate element
+      typingText.textContent = label;
+      this.typingEl.style.display = "";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
       this.deactivateLastToolItem();
