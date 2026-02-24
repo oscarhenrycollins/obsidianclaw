@@ -1085,27 +1085,7 @@ class OpenClawChatView extends ItemView {
     return model.replace(/^claude-/, "");
   }
 
-  private usedStreamKeys = new Set<string>();
 
-  private findStreamItems(msgTimestamp: number): any[] {
-    const map = this.plugin.settings.streamItemsMap || {};
-    // Exact match first
-    const exactKey = String(msgTimestamp);
-    if (map[exactKey]) { this.usedStreamKeys.add(exactKey); return map[exactKey]; }
-    // Proximity match: find closest unused key within 120s
-    const keys = Object.keys(map).filter(k => !this.usedStreamKeys.has(k));
-    let bestKey = "";
-    let bestDiff = Infinity;
-    for (const k of keys) {
-      const diff = Math.abs(Number(k) - msgTimestamp);
-      if (diff < bestDiff && diff < 120000) {
-        bestDiff = diff;
-        bestKey = k;
-      }
-    }
-    if (bestKey) { this.usedStreamKeys.add(bestKey); return map[bestKey] || []; }
-    return [];
-  }
 
 
 
@@ -1575,36 +1555,17 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
-    this.usedStreamKeys.clear();
     for (const msg of this.messages) {
       if (msg.role === "assistant") {
         const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use" || b.type === "toolCall") || false;
 
         if (hasContentTools && msg.contentBlocks) {
-          // Find all text blocks to identify the final one
-          const textBlockIndices: number[] = [];
-          msg.contentBlocks.forEach((b: any, i: number) => {
-            if (b.type === "text" && b.text?.trim()) textBlockIndices.push(i);
-          });
-          const lastTextIndex = textBlockIndices[textBlockIndices.length - 1];
-
-          // Collapsible wrapper for intermediary items
-          let detailsEl: HTMLElement | null = null;
-          if (textBlockIndices.length > 1) {
-            detailsEl = this.messagesEl.createEl("details", { cls: "openclaw-intermediary" });
-            const summary = detailsEl.createEl("summary", { text: "Show steps" });
-          }
-
-          // Render blocks
-          for (let i = 0; i < msg.contentBlocks.length; i++) {
-            const block = msg.contentBlocks[i];
-            const isLastText = i === lastTextIndex;
-            const targetEl = (!isLastText && detailsEl) ? detailsEl : this.messagesEl;
-
+          // Render interleaved text + tool blocks directly
+          for (const block of msg.contentBlocks) {
             if (block.type === "text" && block.text?.trim()) {
               const cleaned = this.cleanText(block.text);
               if (!cleaned) continue;
-              const bubble = targetEl.createDiv("openclaw-msg openclaw-msg-assistant");
+              const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
               try {
                 await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
               } catch {
@@ -1613,34 +1574,8 @@ class OpenClawChatView extends ItemView {
             } else if (block.type === "tool_use" || block.type === "toolCall") {
               const { label, url } = this.buildToolLabel(block.name || "", block.input || block.arguments || {});
               const el = this.createStreamItemEl({ type: "tool", label, url } as StreamItem);
-              targetEl.appendChild(el);
+              this.messagesEl.appendChild(el);
             }
-            // Skip tool_result, toolResult, thinking blocks
-          }
-          continue;
-        }
-
-        // Fallback: check streamItemsMap for tool items (gateway may not include tool_use in contentBlocks)
-        // Keys are client-side timestamps; gateway timestamps differ, so match by proximity (within 60s)
-        const streamItems = this.findStreamItems(msg.timestamp);
-        const hasStreamTools = streamItems.some((si: any) => si.type === "tool");
-        if (hasStreamTools && msg.text) {
-          // Collapsible for tool steps
-          const detailsEl = this.messagesEl.createEl("details", { cls: "openclaw-intermediary" });
-          detailsEl.createEl("summary", { text: "Show steps" });
-          for (const si of streamItems) {
-            if (si.type === "tool") {
-              const el = this.createStreamItemEl(si as StreamItem);
-              detailsEl.appendChild(el);
-            }
-          }
-          // Final text bubble (outside collapsible)
-          const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
-          try {
-            const cleaned = this.cleanText(msg.text);
-            if (cleaned) await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
-          } catch {
-            bubble.createDiv({ text: msg.text, cls: "openclaw-msg-text" });
           }
           continue;
         }
