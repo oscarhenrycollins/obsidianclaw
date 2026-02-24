@@ -665,9 +665,11 @@ class OpenClawChatView extends ItemView {
     const infoBtn = contextLeft.createEl("span", { cls: "openclaw-context-info", attr: { "aria-label": "Context = how much the AI remembers from this chat. Compact to free space. New session for a clean start." } });
     infoBtn.textContent = "?";
     const contextActions = contextBar.createDiv("openclaw-context-actions");
-    const compactBtn = contextActions.createEl("button", { cls: "openclaw-compact-btn", text: "Compact" });
+    const compactBtn = contextActions.createEl("button", { cls: "openclaw-compact-btn", attr: { "aria-label": "Compact — free space, keep context" } });
+    compactBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
     compactBtn.addEventListener("click", () => this.compactSession());
-    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-new-session-btn", text: "New" });
+    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-new-session-btn", attr: { "aria-label": "New session — fresh start" } });
+    newSessionBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
     newSessionBtn.addEventListener("click", () => this.newSession());
 
     // Status banner (compaction, etc.) — hidden by default

@@ -1,34 +1,32 @@
 /* ObsidianClaw — Modern Chat UI */
 
-/* Context bar — ultra minimal */
+/* Context bar */
 .openclaw-context-bar {
   display: flex;
   align-items: center;
-  padding: 3px 10px;
-  gap: 6px;
+  padding: 0;
   flex-shrink: 0;
-  opacity: 0.7;
-  transition: opacity 0.2s;
+  height: 22px;
 }
-.openclaw-context-bar:hover { opacity: 1; }
 .openclaw-context-left {
   display: flex;
   align-items: center;
-  gap: 6px;
   flex: 1;
   min-width: 0;
+  height: 100%;
+  position: relative;
 }
 .openclaw-context-meter {
-  flex: 1;
-  max-width: 80px;
-  height: 2px;
-  border-radius: 1px;
+  width: 100%;
+  height: 3px;
   background: var(--background-modifier-border);
   overflow: hidden;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 .openclaw-context-fill {
   height: 100%;
-  border-radius: 1px;
   background: var(--interactive-accent);
   transition: width 0.5s ease, background 0.3s;
   width: 0%;
@@ -40,6 +38,8 @@
   color: var(--text-faint);
   font-weight: 500;
   white-space: nowrap;
+  margin-left: 8px;
+  margin-top: 4px;
 }
 .openclaw-context-info {
   font-size: 8px;
@@ -47,45 +47,58 @@
   cursor: help;
   flex-shrink: 0;
   position: relative;
+  margin-left: 4px;
+  margin-top: 4px;
+  opacity: 0.5;
 }
+.openclaw-context-info:hover { opacity: 1; }
 .openclaw-context-info:hover::after {
   content: attr(aria-label);
   position: absolute;
-  top: 16px;
-  left: -60px;
-  width: 200px;
+  top: 14px;
+  left: -20px;
+  width: 180px;
   padding: 6px 8px;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 10px;
   color: var(--text-muted);
   line-height: 1.4;
   z-index: 100;
   white-space: normal;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.2);
 }
 .openclaw-context-actions {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
+  padding-right: 6px;
+  margin-top: 4px;
 }
 .openclaw-compact-btn,
 .openclaw-new-session-btn {
   font-size: 9px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   border: none;
-  background: transparent;
+  background: rgba(128,128,128,0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: var(--text-faint);
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 .openclaw-compact-btn:hover,
 .openclaw-new-session-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-muted);
+  background: rgba(128,128,128,0.18);
+  color: var(--text-normal);
 }
 
 /* Container: fill all available space */
