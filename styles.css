@@ -1,14 +1,42 @@
 /* ObsidianClaw — Modern Chat UI */
 
-/* Context bar */
+/* Context bar (single line) */
 .openclaw-context-bar {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+}
+.openclaw-model-select {
+  font-size: 9px;
+  padding: 0px 6px;
+  height: 14px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(128,128,128,0.08);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5" viewBox="0 0 8 5"><path fill="%23999" d="M0 0l4 5 4-5z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 2px center;
+  padding-right: 14px;
+}
+.openclaw-model-select:hover {
+  background-color: rgba(128,128,128,0.18);
+  color: var(--text-muted);
 }
 .openclaw-context-meter {
-  width: 100%;
+  flex: 1;
   height: 3px;
   background: var(--background-modifier-border);
+  border-radius: 1.5px;
   overflow: hidden;
+  min-width: 40px;
 }
 .openclaw-context-fill {
   height: 100%;
@@ -18,45 +46,18 @@
 }
 .openclaw-context-fill.openclaw-context-mid { background: #d4a843; }
 .openclaw-context-fill.openclaw-context-high { background: #c44; }
-.openclaw-context-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 6px;
-  gap: 4px;
-}
-.openclaw-model-select {
-  font-size: 9px;
-  color: var(--text-faint);
-  background: transparent;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  padding: 1px 4px;
-  cursor: pointer;
-  font-family: inherit;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  min-width: 0;
-}
-.openclaw-model-select:hover {
-  border-color: var(--text-faint);
-}
-.openclaw-context-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
 .openclaw-context-label {
   font-size: 9px;
   color: var(--text-faint);
   font-weight: 500;
   white-space: nowrap;
+  min-width: 22px;
 }
 .openclaw-context-btn {
   font-size: 9px;
-  padding: 1px 7px;
+  padding: 0px 7px;
+  height: 14px;
+  line-height: 14px;
   border-radius: 8px;
   border: none;
   background: rgba(128,128,128,0.08);
@@ -218,9 +219,19 @@
   border-radius: 0;
 }
 
-/* Streaming message pulse */
+/* Streaming message glow */
 .openclaw-streaming {
-  opacity: 0.95;
+  animation: openclaw-pulse 1.5s ease-in-out infinite;
+}
+@keyframes openclaw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.openclaw-stream-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* Markdown inside assistant messages */

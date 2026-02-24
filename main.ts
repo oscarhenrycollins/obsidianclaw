@@ -612,7 +612,6 @@ class OpenClawChatView extends ItemView {
   private abortBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private messages: ChatMessage[] = [];
-  private streamText: string | null = null;
   private streamRunId: string | null = null;
   private compactTimer: ReturnType<typeof setTimeout> | null = null;
   private lastDeltaTime: number = 0;
@@ -621,7 +620,10 @@ class OpenClawChatView extends ItemView {
   /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
   private streamItems: StreamItem[] = [];
   private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
-  private streamEl: HTMLElement | null = null;
+  // Streaming segments (interleaved text + tools)
+  private currentSegmentEl: HTMLElement | null = null;
+  private currentSegmentText: string = "";
+  private streamContainerEl: HTMLElement | null = null;
   private contextMeterEl!: HTMLElement;
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
@@ -657,28 +659,29 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
-    // Context bar
+    // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
-    this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
-    this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
-    const contextRow = contextBar.createDiv("openclaw-context-row");
 
-    // Model selector (far left)
-    this.modelSelectorEl = contextRow.createEl("select", { cls: "openclaw-model-select" });
+    // Model selector
+    this.modelSelectorEl = contextBar.createEl("select", { cls: "openclaw-model-select" });
     for (const m of this.availableModels) {
-      const opt = this.modelSelectorEl.createEl("option", { value: m, text: m });
-      this.modelSelectorEl.appendChild(opt);
+      this.modelSelectorEl.createEl("option", { value: m, text: m });
     }
     this.modelSelectorEl.addEventListener("change", () => this.switchModel(this.modelSelectorEl.value));
 
-    // Right side: percentage + buttons
-    const contextRight = contextRow.createDiv("openclaw-context-right");
-    this.contextLabelEl = contextRight.createSpan("openclaw-context-label");
+    // Meter bar (inline, grows to fill space)
+    this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
+    this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
+
+    // Percentage label
+    this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
-    const compactBtn = contextRight.createEl("button", { cls: "openclaw-context-btn" });
+
+    // Action buttons
+    const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
     compactBtn.textContent = "Compact";
     compactBtn.addEventListener("click", () => this.confirmCompact());
-    const newSessionBtn = contextRight.createEl("button", { cls: "openclaw-context-btn" });
+    const newSessionBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
     newSessionBtn.textContent = "New";
     newSessionBtn.addEventListener("click", () => this.confirmNewSession());
 
@@ -942,7 +945,9 @@ class OpenClawChatView extends ItemView {
 
     const runId = generateId();
     this.streamRunId = runId;
-    this.streamText = "";
+    this.currentSegmentText = "";
+    this.currentSegmentEl = null;
+    this.streamContainerEl = null;
     this.abortBtn.style.display = "";
     this.typingEl.style.display = "";
     // Update thinking text and show immediately
@@ -952,7 +957,7 @@ class OpenClawChatView extends ItemView {
 
     // Fallback: if no events at all after 15s, show generic status
     this.compactTimer = setTimeout(() => {
-      if (this.streamRunId === runId && !this.streamText) {
+      if (this.streamRunId === runId && !this.currentSegmentText) {
         const tt = this.typingEl.querySelector(".openclaw-typing-text");
         if (tt && tt.textContent === "Thinking") tt.textContent = "Still thinking";
       }
@@ -971,11 +976,13 @@ class OpenClawChatView extends ItemView {
       await this.plugin.gateway.request("chat.send", sendParams);
     } catch (e) {
       if (this.compactTimer) clearTimeout(this.compactTimer);
-      this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
+      const errorEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+      errorEl.createDiv({ text: `Error: ${e}`, cls: "openclaw-msg-text" });
       this.streamRunId = null;
-      this.streamText = null;
+      this.currentSegmentText = "";
+      this.currentSegmentEl = null;
+      this.streamContainerEl = null;
       this.abortBtn.style.display = "none";
-      await this.renderMessages();
     } finally {
       this.sending = false;
       this.sendBtn.disabled = false;
@@ -1348,7 +1355,7 @@ class OpenClawChatView extends ItemView {
     // Agent "assistant" events = agent is actively working
     if (state === "assistant") {
       const timeSinceDelta = Date.now() - this.lastDeltaTime;
-      if (this.streamText && timeSinceDelta > 1500 && this.typingEl.style.display === "none") {
+      if (this.currentSegmentText && timeSinceDelta > 1500 && this.typingEl.style.display === "none") {
         if (!this.workingTimer) {
           this.workingTimer = setTimeout(() => {
             if (this.streamRunId && this.typingEl.style.display === "none") {
@@ -1358,11 +1365,11 @@ class OpenClawChatView extends ItemView {
             this.workingTimer = null;
           }, 500);
         }
-      } else if (!this.streamText && !this.lastDeltaTime) {
+      } else if (!this.currentSegmentText && !this.lastDeltaTime) {
         this.typingEl.style.display = "";
       }
     } else if (state === "lifecycle") {
-      if (!this.streamText) {
+      if (!this.currentSegmentText) {
         typingText.textContent = "Thinking";
         this.typingEl.style.display = "";
       }
@@ -1375,26 +1382,30 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record position for interleaving
-      if (this.streamText) {
-        this.streamSplitPoints.push(this.streamText.length);
-      }
-      // Keep text in one bubble, show tool name in typing indicator
+      // Freeze current text segment
+      this.freezeStreamSegment();
+      // Append tool item to stream container
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
+      if (this.streamContainerEl) {
+        this.appendToolToStream(label, url, true);
+      }
       typingText.textContent = label;
       this.typingEl.style.display = "";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
-      this.deactivateLastToolItem();
+      this.deactivateLastToolInStream();
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
       this.scrollToBottom();
     } else if (stream === "compaction" || state === "compacting") {
+      this.freezeStreamSegment();
       this.currentToolCalls.push("Compacting memory");
       this.streamItems.push({ type: "tool", label: "Compacting memory" });
-      this.appendToolCall("Compacting memory");
+      if (this.streamContainerEl) {
+        this.appendToolToStream("Compacting memory");
+      }
       this.typingEl.style.display = "none";
       this.showBanner("Compacting context...");
     }
@@ -1438,32 +1449,29 @@ class OpenClawChatView extends ItemView {
       // Extract text from delta - could be string or content blocks
       const text = this.extractDeltaText(payload.message);
       if (text) {
-        this.streamText = text;
-        this.updateStreamBubble();
+        this.appendToStreamSegment(text);
       }
     } else if (payload.state === "final") {
       this.finishStream();
-
-      // Reload history — contentBlocks from gateway have proper tool interleaving
-      this.loadHistory().then(async () => {
-        await this.renderMessages();
-        this.updateContextMeter();
-      });
+      // Just remove streaming glow, don't reload/rewrite
+      if (this.streamContainerEl) {
+        const streamingEls = this.streamContainerEl.querySelectorAll(".openclaw-streaming");
+        streamingEls.forEach(el => el.removeClass("openclaw-streaming"));
+      }
+      this.updateContextMeter();
     } else if (payload.state === "aborted") {
-      if (this.streamText) {
-        this.messages.push({ role: "assistant", text: this.streamText, images: [], timestamp: Date.now() });
+      this.freezeStreamSegment();
+      if (this.streamContainerEl) {
+        this.streamContainerEl.removeClass("openclaw-streaming");
       }
       this.finishStream();
-      this.renderMessages();
     } else if (payload.state === "error") {
-      this.messages.push({
-        role: "assistant",
-        text: `Error: ${payload.errorMessage ?? "unknown error"}`,
-        images: [],
-        timestamp: Date.now(),
-      });
+      this.freezeStreamSegment();
+      if (this.streamContainerEl) {
+        const errorEl = this.streamContainerEl.createDiv("openclaw-msg openclaw-msg-assistant");
+        errorEl.createDiv({ text: `Error: ${payload.errorMessage ?? "unknown error"}`, cls: "openclaw-msg-text" });
+      }
       this.finishStream();
-      this.renderMessages();
     }
   }
 
@@ -1472,12 +1480,13 @@ class OpenClawChatView extends ItemView {
     if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
     this.hideBanner();
     this.streamRunId = null;
-    this.streamText = null;
     this.lastDeltaTime = 0;
     this.currentToolCalls = [];
     this.streamItems = [];
     this.streamSplitPoints = [];
-    this.streamEl = null;
+    this.currentSegmentEl = null;
+    this.currentSegmentText = "";
+    this.streamContainerEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
@@ -1554,17 +1563,55 @@ class OpenClawChatView extends ItemView {
     return msg?.text ?? "";
   }
 
-  private updateStreamBubble(): void {
-    if (!this.streamText) return;
-    const visibleText = this.streamText;
-    if (!visibleText) return;
-    if (!this.streamEl) {
-      this.streamEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
-      this.scrollToBottom(); // Scroll once when bubble first appears
+  private appendToStreamSegment(text: string): void {
+    if (!text) return;
+    // Create stream container if needed (holds all segments + tools for this response)
+    if (!this.streamContainerEl) {
+      this.streamContainerEl = this.messagesEl.createDiv("openclaw-stream-container");
+      this.scrollToBottom();
     }
-    this.streamEl.empty();
-    this.streamEl.createDiv({ text: visibleText, cls: "openclaw-msg-text" });
-    // Don't auto-scroll during text streaming — let user read from the top
+    // Create or update current text segment
+    if (!this.currentSegmentEl) {
+      this.currentSegmentEl = this.streamContainerEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
+      this.currentSegmentText = "";
+    }
+    this.currentSegmentText = text;
+    this.currentSegmentEl.empty();
+    this.currentSegmentEl.createDiv({ text: this.currentSegmentText, cls: "openclaw-msg-text" });
+  }
+
+  private freezeStreamSegment(): void {
+    if (this.currentSegmentEl) {
+      this.currentSegmentEl.removeClass("openclaw-streaming");
+      this.currentSegmentEl = null;
+      this.currentSegmentText = "";
+    }
+  }
+
+  private appendToolToStream(label: string, url?: string, active = false): void {
+    if (!this.streamContainerEl) return;
+    const el = this.streamContainerEl.createDiv("openclaw-tool-item" + (active ? " openclaw-tool-active" : ""));
+    if (url) {
+      const link = el.createEl("a", { href: url, text: label });
+    } else {
+      const span = el.createSpan({ text: label });
+    }
+    if (active) {
+      const dots = el.createSpan("openclaw-tool-dots");
+      dots.innerHTML = '<span class="openclaw-dot"></span><span class="openclaw-dot"></span><span class="openclaw-dot"></span>';
+    }
+    this.scrollToBottom();
+  }
+
+  private deactivateLastToolInStream(): void {
+    if (!this.streamContainerEl) return;
+    const items = this.streamContainerEl.querySelectorAll(".openclaw-tool-active");
+    const last = items[items.length - 1];
+    if (last) {
+      last.removeClass("openclaw-tool-active");
+      const dots = last.querySelector(".openclaw-tool-dots");
+      if (dots) dots.remove();
+    }
   }
 
   async renderMessages(): Promise<void> {
