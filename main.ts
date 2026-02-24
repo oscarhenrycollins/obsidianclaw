@@ -1307,27 +1307,8 @@ class OpenClawChatView extends ItemView {
       const finalText = this.extractDeltaText(payload.message) || this.streamText || "";
       const toolItems = this.streamItems.filter(i => i.type === "tool");
       
-      if (toolItems.length > 0 && this.streamSplitPoints.length > 0) {
-        // Rebuild stream items: split final text at recorded positions, interleave with tools
-        const newItems: StreamItem[] = [];
-        let lastPos = 0;
-        let toolIdx = 0;
-        for (const splitPos of this.streamSplitPoints) {
-          const segment = finalText.slice(lastPos, splitPos).trim();
-          if (segment) newItems.push({ type: "text", text: segment });
-          if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
-          lastPos = splitPos;
-        }
-        // Remaining tools (if any)
-        while (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
-        // Remaining text after last tool
-        const remaining = finalText.slice(lastPos).trim();
-        if (remaining) newItems.push({ type: "text", text: remaining });
-        this.streamItems = newItems;
-      } else {
-        // No tools — don't store text items (history message is sufficient)
-        this.streamItems = [];
-      }
+      // Only persist tool items (text comes from history — no duplication risk)
+      this.streamItems = toolItems;
       const items = [...this.streamItems];
       this.finishStream();
 
@@ -1469,11 +1450,18 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
+    const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
-      // For assistant messages: use content blocks if available (preserves tool interleaving)
-      if (msg.role === "assistant" && msg.contentBlocks) {
-        const hasTools = msg.contentBlocks.some((b: any) => b.type === "tool_use");
-        if (hasTools) {
+      if (msg.role === "assistant") {
+        // Check if content blocks have tool_use (gateway may include them)
+        const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use") || false;
+        // Check if we have persisted stream items with tools
+        const key = String(msg.timestamp);
+        const stored = itemsMap[key];
+        const storedTools = stored?.filter((s: StreamItem) => s.type === "tool") || [];
+
+        if (hasContentTools && msg.contentBlocks) {
+          // Best case: content blocks have tools interleaved — use them directly
           for (const block of msg.contentBlocks) {
             if (block.type === "text" && block.text?.trim()) {
               const cleaned = this.cleanText(block.text);
@@ -1489,9 +1477,16 @@ class OpenClawChatView extends ItemView {
               const el = this.createStreamItemEl({ type: "tool", label, url } as StreamItem);
               this.messagesEl.appendChild(el);
             }
-            // Skip tool_result, thinking, etc.
           }
-          continue; // Handled via content blocks
+          continue;
+        }
+
+        if (storedTools.length > 0) {
+          // Render stored tool items before the text bubble
+          for (const item of storedTools) {
+            this.messagesEl.appendChild(this.createStreamItemEl(item));
+          }
+          // Fall through to render the text bubble normally
         }
       }
       const cls = msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
