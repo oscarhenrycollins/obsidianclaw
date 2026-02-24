@@ -626,8 +626,133 @@
 
 .openclaw-onboarding {
   padding: 16px;
-  max-width: 400px;
+  max-width: 440px;
   margin: 0 auto;
+}
+.openclaw-onboard-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 20px;
+}
+.openclaw-step-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.openclaw-step-dot.active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.openclaw-step-dot.done {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+.openclaw-step-line {
+  width: 24px;
+  height: 2px;
+  background: var(--background-modifier-border);
+  flex-shrink: 0;
+}
+.openclaw-step-line.done {
+  background: rgba(76, 175, 80, 0.4);
+}
+.openclaw-onboard-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.openclaw-onboard-field {
+  margin: 12px 0;
+}
+.openclaw-onboard-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.openclaw-onboard-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-sizing: border-box;
+}
+.openclaw-onboard-input:focus {
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+.openclaw-onboard-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+.openclaw-onboard-hint code {
+  font-size: 10px;
+  background: var(--background-secondary);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.openclaw-onboard-info {
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.openclaw-onboard-list {
+  font-size: 13px;
+  padding-left: 20px;
+}
+.openclaw-onboard-list li {
+  margin: 6px 0;
+  line-height: 1.4;
+}
+.openclaw-onboard-status {
+  min-height: 20px;
+  margin: 12px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.openclaw-onboard-status:empty {
+  display: none;
+}
+.openclaw-onboard-status-info {
+  background: rgba(33, 150, 243, 0.1);
+  color: var(--text-muted);
+}
+.openclaw-onboard-status-success {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+.openclaw-onboard-status-error {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+}
+.openclaw-onboard-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.openclaw-onboard-security {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 12px 0;
 }
 
 /* Smooth scrollbar */

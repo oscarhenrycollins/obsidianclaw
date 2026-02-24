@@ -390,9 +390,8 @@ interface ChatMessage {
 class OnboardingModal extends Modal {
   plugin: OpenClawPlugin;
   private step = 0;
-  private urlInput: HTMLInputElement | null = null;
-  private tokenInput: HTMLInputElement | null = null;
   private statusEl: HTMLElement | null = null;
+  private pairingPollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(app: App, plugin: OpenClawPlugin) {
     super(app);
@@ -405,188 +404,256 @@ class OnboardingModal extends Modal {
   }
 
   onClose(): void {
-    // If they close without finishing, that's ok — they can reopen from settings
+    if (this.pairingPollTimer) { clearInterval(this.pairingPollTimer); this.pairingPollTimer = null; }
   }
 
   private renderStep(): void {
     const { contentEl } = this;
     contentEl.empty();
+    this.statusEl = null;
 
-    if (this.step === 0) this.renderWelcome(contentEl);
+    // Step indicator
+    const steps = ["Prerequisites", "Connect", "Pair Device", "Done"];
+    const indicator = contentEl.createDiv("openclaw-onboard-steps");
+    steps.forEach((label, i) => {
+      const dot = indicator.createSpan("openclaw-step-dot" + (i === this.step ? " active" : i < this.step ? " done" : ""));
+      dot.textContent = i < this.step ? "✓" : String(i + 1);
+      if (i < steps.length - 1) indicator.createSpan("openclaw-step-line" + (i < this.step ? " done" : ""));
+    });
+
+    if (this.step === 0) this.renderPrereqs(contentEl);
     else if (this.step === 1) this.renderConnect(contentEl);
-    else if (this.step === 2) this.renderDone(contentEl);
+    else if (this.step === 2) this.renderPairing(contentEl);
+    else if (this.step === 3) this.renderDone(contentEl);
   }
 
-  private renderWelcome(el: HTMLElement): void {
+  // ─── Step 0: Prerequisites ───────────────────────────────────────
+
+  private renderPrereqs(el: HTMLElement): void {
     el.createEl("h2", { text: "Welcome to OpenClaw" });
     el.createEl("p", {
-      text: "This plugin connects Obsidian to your OpenClaw AI agent via Tailscale. Your vault becomes the agent's workspace — it can read your notes, create new ones, and search across everything.",
+      text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace — it reads your notes, creates new ones, and works alongside you.",
       cls: "openclaw-onboard-desc",
     });
 
-    el.createEl("h3", { text: "Before you start" });
+    el.createEl("h3", { text: "You'll need" });
     const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
-    list.createEl("li", {
-      text: "OpenClaw must be running on a machine with Tailscale",
-    });
-    list.createEl("li", {
-      text: "This device must be on the same Tailscale network",
-    });
-    list.createEl("li", {
-      text: "Have your gateway auth token ready (from ~/.openclaw/openclaw.json)",
+    list.createEl("li").innerHTML = "<strong>OpenClaw running</strong> — on a VPS, Mac, or PC (<a href='https://botsetupguide.com'>setup guide</a>)";
+    list.createEl("li").innerHTML = "<strong>Tailscale installed</strong> — on both your gateway machine and this device (<a href='https://tailscale.com/download'>tailscale.com</a>)";
+    list.createEl("li").innerHTML = "<strong>Auth token</strong> — from <code>~/.openclaw/openclaw.json</code> on your gateway machine";
+
+    el.createEl("p", {
+      text: "Tailscale creates a private encrypted network between your devices. No ports to open, no VPN to configure.",
+      cls: "openclaw-onboard-hint",
     });
 
-    const info = el.createDiv("openclaw-onboard-info");
-    info.createEl("strong", { text: "Need help? " });
-    info.createEl("span", {
-      text: "Visit botsetupguide.com for the full setup guide.",
-    });
+    this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const nextBtn = btnRow.createEl("button", { text: "Connect to gateway →", cls: "mod-cta" });
-    nextBtn.addEventListener("click", () => {
-      this.step = 1;
-      this.renderStep();
-    });
+    const nextBtn = btnRow.createEl("button", { text: "I'm ready →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => { this.step = 1; this.renderStep(); });
   }
+
+  // ─── Step 1: Connect ─────────────────────────────────────────────
 
   private renderConnect(el: HTMLElement): void {
     el.createEl("h2", { text: "Connect to your gateway" });
-    el.createEl("p", {
-      text: "Enter your Tailscale gateway address and auth token. Find both on your gateway machine.",
-      cls: "openclaw-onboard-desc",
-    });
 
     // URL input
     const urlGroup = el.createDiv("openclaw-onboard-field");
-    urlGroup.createEl("label", { text: "Gateway URL (Tailscale)" });
-    this.urlInput = urlGroup.createEl("input", {
+    urlGroup.createEl("label", { text: "Gateway URL" });
+    const urlInput = urlGroup.createEl("input", {
       type: "text",
       value: this.plugin.settings.gatewayUrl || "",
       placeholder: "ws://100.x.x.x:18789",
       cls: "openclaw-onboard-input",
     });
-
-    const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.innerHTML = "Run <code>tailscale ip -4</code> on your gateway machine to get the IP";
+    urlGroup.createDiv("openclaw-onboard-hint").innerHTML =
+      "Your Tailscale IP. Run <code>tailscale ip -4</code> on the gateway machine.";
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
     tokenGroup.createEl("label", { text: "Auth Token" });
-    this.tokenInput = tokenGroup.createEl("input", {
+    const tokenInput = tokenGroup.createEl("input", {
       type: "password",
-      value: this.plugin.settings.token,
-      placeholder: "From ~/.openclaw/openclaw.json → gateway.auth.token",
+      value: this.plugin.settings.token || "",
+      placeholder: "Paste your gateway auth token",
       cls: "openclaw-onboard-input",
     });
+    tokenGroup.createDiv("openclaw-onboard-hint").innerHTML =
+      "Find it: <code>cat ~/.openclaw/openclaw.json | grep token</code>";
 
-    const tokenHint = tokenGroup.createDiv("openclaw-onboard-hint");
-    tokenHint.innerHTML = "On your gateway machine: <code>cat ~/.openclaw/openclaw.json | grep token</code>";
-
-    // Security note
-    const secNote = el.createDiv("openclaw-onboard-security");
-    secNote.createEl("strong", { text: "🔒 Security" });
-    secNote.createEl("p", {
-      text: "After connecting, this device will generate a unique keypair for device pairing. You'll need to approve the pairing on your gateway machine. Your token and keys are stored locally and never leave your Tailscale network.",
-    });
-
-    // Status
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
-    // Buttons
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const backBtn = btnRow.createEl("button", { text: "← Back" });
-    backBtn.addEventListener("click", () => {
-      this.step = 0;
-      this.renderStep();
-    });
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
+
     const testBtn = btnRow.createEl("button", { text: "Test connection", cls: "mod-cta" });
-    testBtn.addEventListener("click", () => this.testConnection(testBtn));
+    testBtn.addEventListener("click", async () => {
+      const url = urlInput.value.trim();
+      const token = tokenInput.value.trim();
+
+      if (!url) { this.showStatus("Enter a gateway URL", "error"); return; }
+      if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
+        this.showStatus("URL must start with ws:// or wss://", "error"); return;
+      }
+      if (!token) { this.showStatus("Enter your auth token", "error"); return; }
+
+      testBtn.disabled = true;
+      testBtn.textContent = "Connecting...";
+      this.showStatus("Testing connection...", "info");
+
+      this.plugin.settings.gatewayUrl = url;
+      this.plugin.settings.token = token;
+      await this.plugin.saveSettings();
+
+      const ok = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => { tc.stop(); resolve(false); }, 8000);
+        const tc = new GatewayClient({
+          url, token,
+          onHello: () => { clearTimeout(timeout); tc.stop(); resolve(true); },
+          onClose: () => {},
+        });
+        tc.start();
+      });
+
+      testBtn.disabled = false;
+      testBtn.textContent = "Test connection";
+
+      if (ok) {
+        this.showStatus("✓ Connected!", "success");
+        setTimeout(() => { this.step = 2; this.renderStep(); }, 800);
+      } else {
+        this.showStatus("Could not connect. Check the URL and that OpenClaw is running.", "error");
+      }
+    });
   }
 
-  private async testConnection(btn: HTMLButtonElement): Promise<void> {
-    if (!this.urlInput || !this.statusEl) return;
+  // ─── Step 2: Device Pairing ──────────────────────────────────────
 
-    const url = this.urlInput.value.trim();
-    if (!url) {
-      this.showStatus("Enter a gateway URL", "error");
-      return;
-    }
-    if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
-      this.showStatus("URL must start with ws:// or wss://", "error");
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = "Connecting...";
-    this.showStatus("Connecting to gateway...", "info");
-
-    const token = this.tokenInput?.value.trim() || "";
-
-    // Save settings
-    this.plugin.settings.gatewayUrl = url;
-    this.plugin.settings.token = token;
-    await this.plugin.saveSettings();
-
-    // Try to connect with a timeout
-    const testResult = await new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => {
-        testClient.stop();
-        resolve(false);
-      }, 8000);
-
-      const testClient = new GatewayClient({
-        url,
-        token: token || undefined,
-        onHello: () => {
-          clearTimeout(timeout);
-          testClient.stop();
-          resolve(true);
-        },
-        onClose: () => {
-          // Don't resolve here — let timeout handle failure
-        },
-      });
-      testClient.start();
+  private renderPairing(el: HTMLElement): void {
+    el.createEl("h2", { text: "Pair this device" });
+    el.createEl("p", {
+      text: "Your device needs to be approved by the gateway. This creates a secure keypair unique to this device.",
+      cls: "openclaw-onboard-desc",
     });
 
-    btn.disabled = false;
-    btn.textContent = "Test connection";
+    const hasKeys = this.plugin.settings.deviceId && this.plugin.settings.devicePublicKey;
 
-    if (testResult) {
-      this.showStatus("✓ Connected successfully!", "success");
-      // Auto-advance after a moment
-      setTimeout(() => {
-        this.step = 2;
-        this.renderStep();
-      }, 1000);
-    } else {
-      this.showStatus("Could not connect. Check that OpenClaw is running and the URL is correct.", "error");
+    if (hasKeys) {
+      const info = el.createDiv("openclaw-onboard-info");
+      info.createEl("p", { text: "This device already has a keypair." });
+      info.createEl("p").innerHTML = `Device ID: <code>${this.plugin.settings.deviceId?.slice(0, 12)}...</code>`;
     }
+
+    this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+
+    const pairBtn = btnRow.createEl("button", {
+      text: hasKeys ? "Check pairing status" : "Generate keypair & pair",
+      cls: "mod-cta",
+    });
+    pairBtn.addEventListener("click", async () => {
+      pairBtn.disabled = true;
+      this.showStatus("Connecting to gateway...", "info");
+
+      try {
+        // Ensure we have a real connection to test pairing
+        await this.plugin.connectGateway();
+
+        // Wait a moment for connection to establish
+        await new Promise(r => setTimeout(r, 2000));
+
+        if (!this.plugin.gatewayConnected) {
+          this.showStatus("Could not connect to gateway. Check your settings.", "error");
+          pairBtn.disabled = false;
+          return;
+        }
+
+        // Try a simple request to verify pairing
+        try {
+          const result = await this.plugin.gateway!.request("sessions.list", {});
+          if (result?.sessions) {
+            this.showStatus("✓ Device is paired and authorized!", "success");
+            setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+            return;
+          }
+        } catch (e: any) {
+          // If we get an auth error, device needs approval
+          const msg = String(e);
+          if (msg.includes("scope") || msg.includes("auth") || msg.includes("pair")) {
+            this.showStatus("⏳ Device pairing requested. Approve it on your gateway machine:\n\n• Open the OpenClaw dashboard, or\n• Run: openclaw devices\n\nWaiting for approval...", "info");
+            this.startPairingPoll(pairBtn);
+            return;
+          }
+        }
+
+        // If we got here, connection works — might already be paired
+        this.showStatus("✓ Connection working! Proceeding...", "success");
+        setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+      } catch (e) {
+        this.showStatus(`Error: ${e}`, "error");
+        pairBtn.disabled = false;
+      }
+    });
+
+    const skipBtn = btnRow.createEl("button", { text: "Skip for now" });
+    skipBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
   }
+
+  private startPairingPoll(btn: HTMLButtonElement): void {
+    let attempts = 0;
+    this.pairingPollTimer = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) { // 2 minutes
+        if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
+        this.showStatus("Timed out waiting for approval. You can approve later and retry.", "error");
+        btn.disabled = false;
+        return;
+      }
+      try {
+        const result = await this.plugin.gateway?.request("sessions.list", {});
+        if (result?.sessions) {
+          if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
+          this.showStatus("✓ Device approved!", "success");
+          setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+        }
+      } catch { /* still waiting */ }
+    }, 2000);
+  }
+
+  // ─── Step 3: Done ────────────────────────────────────────────────
 
   private renderDone(el: HTMLElement): void {
-    el.createEl("h2", { text: "Connected!" });
+    el.createEl("h2", { text: "You're all set! 🎉" });
     el.createEl("p", {
-      text: "OpenClaw is connected. If this is a new device, you'll need to approve the device pairing on your gateway machine (check the OpenClaw dashboard or CLI).",
+      text: "OpenClaw is connected and ready. Your vault is now the agent's workspace.",
       cls: "openclaw-onboard-desc",
     });
 
     const tips = el.createDiv("openclaw-onboard-tips");
-    tips.createEl("h3", { text: "Quick tips" });
+    tips.createEl("h3", { text: "What you can do" });
     const list = tips.createEl("ul", { cls: "openclaw-onboard-list" });
-    list.createEl("li", { text: "Use Cmd/Ctrl+P → \"Ask about current note\" to send any note as context" });
-    list.createEl("li", { text: "The agent can read and edit files in your vault directly" });
-    list.createEl("li", { text: "Tool calls are shown inline — click file paths to open them" });
-    list.createEl("li", { text: "Change settings anytime in Settings → OpenClaw" });
+    list.createEl("li", { text: "Chat with your AI agent in the sidebar" });
+    list.createEl("li", { text: "Use Cmd/Ctrl+P → \"Ask about current note\" to discuss any note" });
+    list.createEl("li", { text: "The agent can read, create, and edit files in your vault" });
+    list.createEl("li", { text: "Tool calls appear inline — click file paths to open them" });
+
+    const syncTip = el.createDiv("openclaw-onboard-info");
+    syncTip.createEl("strong", { text: "💡 Sync tip: " });
+    syncTip.createEl("span", {
+      text: "Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically.",
+    });
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const doneBtn = btnRow.createEl("button", { text: "Start chatting", cls: "mod-cta" });
+    const doneBtn = btnRow.createEl("button", { text: "Start chatting →", cls: "mod-cta" });
     doneBtn.addEventListener("click", async () => {
       this.plugin.settings.onboardingComplete = true;
       await this.plugin.saveSettings();
       this.close();
-      this.plugin.connectGateway();
+      if (!this.plugin.gatewayConnected) this.plugin.connectGateway();
       this.plugin.activateView();
     });
   }
@@ -595,7 +662,11 @@ class OnboardingModal extends Modal {
     if (!this.statusEl) return;
     this.statusEl.empty();
     this.statusEl.className = `openclaw-onboard-status openclaw-onboard-status-${type}`;
-    this.statusEl.textContent = text;
+    // Support multiline with \n
+    for (const line of text.split("\n")) {
+      if (this.statusEl.childNodes.length > 0) this.statusEl.createEl("br");
+      this.statusEl.appendText(line);
+    }
   }
 }
 
