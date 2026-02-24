@@ -1436,10 +1436,11 @@ class OpenClawChatView extends ItemView {
       if (this.streamText) {
         this.streamSplitPoints.push(this.streamText.length);
       }
-      // Keep text in one bubble, show tool name in typing indicator
+      // Show tool call in chat + typing indicator
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
+      this.appendToolCall(label, url, true);
       typingText.textContent = label;
       this.typingEl.style.display = "";
     } else if ((stream === "tool" || toolName) && phase === "result") {
@@ -1992,10 +1993,10 @@ class OpenClawSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Run setup wizard")
-      .setDesc("Re-run the onboarding flow")
+      .setName("Setup wizard")
+      .setDesc("Walk through connection, pairing, and sync setup. Safe to re-run anytime.")
       .addButton((btn) =>
-        btn.setButtonText("Setup").onClick(() => {
+        btn.setButtonText("Run setup wizard").setCta().onClick(() => {
           new OnboardingModal(this.app, this.plugin).open();
         })
       );

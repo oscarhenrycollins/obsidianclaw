@@ -214,21 +214,13 @@
   border-radius: 0;
 }
 
-/* Streaming message glow */
+/* Streaming message pulse — text fades in/out */
 .openclaw-streaming {
-  animation: openclaw-pulse 2s ease-in-out infinite;
-  box-shadow: 0 0 12px rgba(136, 100, 255, 0.3);
-  border-left: 2px solid rgba(136, 100, 255, 0.5);
+  animation: openclaw-pulse 1.8s ease-in-out infinite;
 }
 @keyframes openclaw-pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(136, 100, 255, 0.2);
-  }
-  50% {
-    opacity: 0.85;
-    box-shadow: 0 0 20px rgba(136, 100, 255, 0.45);
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 
