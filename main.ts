@@ -619,6 +619,7 @@ class OpenClawChatView extends ItemView {
   private currentToolCalls: string[] = [];
   /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
   private streamItems: StreamItem[] = [];
+  private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
   private streamEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -1229,13 +1230,9 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Save the NEW text since last captured segment before the tool call
+      // Record where in the text this tool call happened
       if (this.streamText) {
-        const capturedLen = this.streamItems.filter(i => i.type === "text").reduce((acc, i) => acc + (i.text?.length || 0), 0);
-        const newText = this.streamText.slice(capturedLen).trim();
-        if (newText) {
-          this.streamItems.push({ type: "text", text: newText });
-        }
+        this.streamSplitPoints.push(this.streamText.length);
       }
       // Freeze the current streaming bubble in place (don't delete it)
       if (this.streamEl) {
@@ -1306,17 +1303,27 @@ class OpenClawChatView extends ItemView {
     } else if (payload.state === "final") {
       // Use the final message text (authoritative)
       const finalText = this.extractDeltaText(payload.message) || this.streamText || "";
-      // Only store stream items if there were tool calls (for interleaving)
-      const hasTools = this.streamItems.some(i => i.type === "tool");
-      if (hasTools) {
-        // Get the new text since last captured segment
-        const capturedLen = this.streamItems.filter(i => i.type === "text").reduce((acc, i) => acc + (i.text?.length || 0), 0);
-        const remaining = finalText.slice(capturedLen).trim();
-        if (remaining) {
-          this.streamItems.push({ type: "text", text: remaining });
+      const toolItems = this.streamItems.filter(i => i.type === "tool");
+      
+      if (toolItems.length > 0 && this.streamSplitPoints.length > 0) {
+        // Rebuild stream items: split final text at recorded positions, interleave with tools
+        const newItems: StreamItem[] = [];
+        let lastPos = 0;
+        let toolIdx = 0;
+        for (const splitPos of this.streamSplitPoints) {
+          const segment = finalText.slice(lastPos, splitPos).trim();
+          if (segment) newItems.push({ type: "text", text: segment });
+          if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
+          lastPos = splitPos;
         }
+        // Remaining tools (if any)
+        while (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
+        // Remaining text after last tool
+        const remaining = finalText.slice(lastPos).trim();
+        if (remaining) newItems.push({ type: "text", text: remaining });
+        this.streamItems = newItems;
       } else {
-        // No tools — don't store text items (the history message is sufficient)
+        // No tools — don't store text items (history message is sufficient)
         this.streamItems = [];
       }
       const items = [...this.streamItems];
@@ -1366,8 +1373,8 @@ class OpenClawChatView extends ItemView {
     this.streamText = null;
     this.lastDeltaTime = 0;
     this.currentToolCalls = [];
-    // (cleaned up: no more intermediary text tracking)
     this.streamItems = [];
+    this.streamSplitPoints = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
