@@ -623,7 +623,7 @@ class OpenClawChatView extends ItemView {
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
-  private pendingAttachments: { name: string; content: string; vaultPath?: string }[] = [];
+  private pendingAttachments: { name: string; content: string; vaultPath?: string; base64?: string; mimeType?: string }[] = [];
   private sending = false;
   private bannerEl!: HTMLElement;
 
@@ -880,22 +880,22 @@ class OpenClawChatView extends ItemView {
     this.inputEl.value = "";
     this.autoResize();
 
-    // Append attachment content to message
+    // Build attachments for gateway
     let fullMessage = text;
     const displayText = text;
     const userImages: string[] = [];
+    const gatewayAttachments: { type: string; mimeType: string; content: string }[] = [];
     if (this.pendingAttachments.length > 0) {
-      const attachParts = this.pendingAttachments.map(a => a.content);
-      fullMessage = (text ? text + "\n\n" : "") + attachParts.join("\n\n");
-      if (!text) text = `📎 ${this.pendingAttachments.map(a => a.name).join(", ")}`;
       for (const att of this.pendingAttachments) {
-        if (att.vaultPath) {
-          try {
-            const resourcePath = this.app.vault.adapter.getResourcePath(att.vaultPath);
-            if (resourcePath) userImages.push(resourcePath);
-          } catch { /* ignore */ }
+        if (att.base64 && att.mimeType) {
+          // Image: send via attachments field (gateway saves to disk)
+          gatewayAttachments.push({ type: "image", mimeType: att.mimeType, content: att.base64 });
+        } else {
+          // Text files: append to message as before
+          fullMessage = (fullMessage ? fullMessage + "\n\n" : "") + att.content;
         }
       }
+      if (!text) text = `📎 ${this.pendingAttachments.map(a => a.name).join(", ")}`;
       this.pendingAttachments = [];
       this.attachPreviewEl.style.display = "none";
     }
@@ -922,12 +922,16 @@ class OpenClawChatView extends ItemView {
     }, 15000);
 
     try {
-      await this.plugin.gateway.request("chat.send", {
+      const sendParams: any = {
         sessionKey: this.plugin.settings.sessionKey,
         message: fullMessage,
         deliver: false,
         idempotencyKey: runId,
-      });
+      };
+      if (gatewayAttachments.length > 0) {
+        sendParams.attachments = gatewayAttachments;
+      }
+      await this.plugin.gateway.request("chat.send", sendParams);
     } catch (e) {
       if (this.compactTimer) clearTimeout(this.compactTimer);
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
@@ -965,21 +969,12 @@ class OpenClawChatView extends ItemView {
           /\.(md|txt|json|csv|yaml|yml|js|ts|py|html|css|xml|toml|ini|sh|log)$/i.test(file.name);
 
         if (isImage) {
-          const arrayBuf = await file.arrayBuffer();
-          const attachDir = "openclaw-attachments";
-          if (!this.app.vault.getAbstractFileByPath(attachDir)) {
-            await this.app.vault.createFolder(attachDir);
-          }
-          const timestamp = Date.now();
-          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-          const attachPath = `${attachDir}/${timestamp}-${safeName}`;
-          await this.app.vault.createBinary(attachPath, arrayBuf);
-          const vaultPath = (this.app.vault.adapter as any).basePath || "";
-          const absPath = vaultPath ? `${vaultPath}/${attachPath}` : attachPath;
+          const resized = await this.resizeImage(file, 2048, 0.85);
           this.pendingAttachments.push({
             name: file.name,
-            content: `[Attached image: ${file.name} (${file.type}, ${Math.round(file.size/1024)}KB)]\nFile saved at: ${absPath}`,
-            vaultPath: attachPath,
+            content: `[Attached image: ${file.name}]`,
+            base64: resized.base64,
+            mimeType: resized.mimeType,
           });
         } else if (isText) {
           const content = await file.text();
@@ -1006,26 +1001,45 @@ class OpenClawChatView extends ItemView {
 
   async handlePastedFile(file: File): Promise<void> {
     try {
-      const arrayBuf = await file.arrayBuffer();
-      const attachDir = "openclaw-attachments";
-      if (!this.app.vault.getAbstractFileByPath(attachDir)) {
-        await this.app.vault.createFolder(attachDir);
-      }
-      const timestamp = Date.now();
       const ext = file.type.split("/")[1] || "png";
-      const attachPath = `${attachDir}/${timestamp}-clipboard.${ext}`;
-      await this.app.vault.createBinary(attachPath, arrayBuf);
-      const vaultPath = (this.app.vault.adapter as any).basePath || "";
-      const absPath = vaultPath ? `${vaultPath}/${attachPath}` : attachPath;
+      const resized = await this.resizeImage(file, 2048, 0.85);
       this.pendingAttachments.push({
         name: `clipboard.${ext}`,
-        content: `[Attached image: clipboard.${ext} (${file.type}, ${Math.round(file.size/1024)}KB)]\nFile saved at: ${absPath}`,
-        vaultPath: attachPath,
+        content: `[Attached image: clipboard.${ext}]`,
+        base64: resized.base64,
+        mimeType: resized.mimeType,
       });
       this.renderAttachPreview();
     } catch (e) {
       new Notice(`Failed to paste image: ${e}`);
     }
+  }
+
+  private async resizeImage(file: File, maxSide: number, quality: number): Promise<{ base64: string; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxSide || height > maxSide) {
+          const scale = maxSide / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("No canvas context")); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const base64 = dataUrl.split(",")[1];
+        resolve({ base64, mimeType: "image/jpeg" });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Failed to load image")); };
+      img.src = url;
+    });
   }
 
   private renderAttachPreview(): void {
