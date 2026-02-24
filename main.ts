@@ -625,9 +625,8 @@ class OpenClawChatView extends ItemView {
   private contextMeterEl!: HTMLElement;
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
-  private modelSelectorEl!: HTMLSelectElement;
+  private modelLabelEl!: HTMLElement;
   private currentModel: string = "";
-  private availableModels: { id: string; label: string }[] = []; // populated dynamically from gateway
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -660,9 +659,8 @@ class OpenClawChatView extends ItemView {
     // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Model selector (populated dynamically from gateway)
-    this.modelSelectorEl = contextBar.createEl("select", { cls: "openclaw-model-select" });
-    this.modelSelectorEl.addEventListener("change", () => this.switchModel(this.modelSelectorEl.value));
+    // Model label (read-only display)
+    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-model-label" });
 
     // Meter bar (inline, grows to fill space)
     this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
@@ -778,7 +776,6 @@ class OpenClawChatView extends ItemView {
     this.plugin.chatView = this;
     if (this.plugin.gatewayConnected) {
       await this.loadHistory();
-      this.fetchAvailableModels();
     }
   }
 
@@ -1006,31 +1003,11 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
-      // Update model selector from session data
+      // Update model label from session data
       const fullModel = main.model || "";
       if (fullModel && fullModel !== this.currentModel) {
         this.currentModel = fullModel;
-        // Ensure model is in the dropdown
-        if (!this.availableModels.find(m => m.id === fullModel)) {
-          this.availableModels.push({ id: fullModel, label: this.shortModelName(fullModel) });
-          this.rebuildModelDropdown();
-        }
-        this.modelSelectorEl.value = fullModel;
-      }
-      // Also add default model if different
-      const defModel = main.defaultModel || "";
-      if (defModel && !this.availableModels.find(m => m.id === defModel)) {
-        this.availableModels.push({ id: defModel, label: this.shortModelName(defModel) });
-        this.rebuildModelDropdown();
-      }
-      // Add fallback models if present
-      const fallbacks = main.fallbackModels || main.fallbacks || [];
-      for (const fb of fallbacks) {
-        const fbId = typeof fb === "string" ? fb : fb?.model || "";
-        if (fbId && !this.availableModels.find(m => m.id === fbId)) {
-          this.availableModels.push({ id: fbId, label: this.shortModelName(fbId) });
-          this.rebuildModelDropdown();
-        }
+        this.modelLabelEl.textContent = this.shortModelName(fullModel);
       }
     } catch { /* ignore */ }
   }
@@ -1108,57 +1085,29 @@ class OpenClawChatView extends ItemView {
     return model.replace(/^claude-/, "");
   }
 
-  private fullModelName(fullId: string): string {
-    if (fullId.includes("/")) {
-      const [provider, model] = fullId.split("/");
-      return `${provider} / ${model}`;
-    }
-    return fullId;
-  }
+  private usedStreamKeys = new Set<string>();
 
-  async fetchAvailableModels(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
-    try {
-      const result = await this.plugin.gateway.request("models.list", {});
-      const models = result?.models || result?.candidates || [];
-      for (const m of models) {
-        const id = typeof m === "string" ? m : (m.id || m.model || m.name || "");
-        if (id && !this.availableModels.find(am => am.id === id)) {
-          this.availableModels.push({ id, label: this.shortModelName(id) });
-        }
+  private findStreamItems(msgTimestamp: number): any[] {
+    const map = this.plugin.settings.streamItemsMap || {};
+    // Exact match first
+    const exactKey = String(msgTimestamp);
+    if (map[exactKey]) { this.usedStreamKeys.add(exactKey); return map[exactKey]; }
+    // Proximity match: find closest unused key within 120s
+    const keys = Object.keys(map).filter(k => !this.usedStreamKeys.has(k));
+    let bestKey = "";
+    let bestDiff = Infinity;
+    for (const k of keys) {
+      const diff = Math.abs(Number(k) - msgTimestamp);
+      if (diff < bestDiff && diff < 120000) {
+        bestDiff = diff;
+        bestKey = k;
       }
-      this.rebuildModelDropdown();
-      if (this.currentModel) this.modelSelectorEl.value = this.currentModel;
-    } catch {
-      // models.list may not be available — fall back to session data
     }
+    if (bestKey) { this.usedStreamKeys.add(bestKey); return map[bestKey] || []; }
+    return [];
   }
 
-  private rebuildModelDropdown(): void {
-    const current = this.modelSelectorEl.value;
-    this.modelSelectorEl.empty();
-    for (const m of this.availableModels) {
-      this.modelSelectorEl.createEl("option", { value: m.id, text: this.fullModelName(m.id) });
-    }
-    if (current) this.modelSelectorEl.value = current;
-  }
 
-  async switchModel(model: string): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
-    try {
-      await this.plugin.gateway.request("chat.send", {
-        sessionKey: this.plugin.settings.sessionKey,
-        message: `/model ${model}`,
-        deliver: false,
-        idempotencyKey: "model-" + Date.now(),
-      });
-      this.currentModel = model;
-      const label = this.availableModels.find(m => m.id === model)?.label || model;
-      new Notice(`Switched to ${label}`);
-    } catch (e) {
-      new Notice(`Model switch failed: ${e}`);
-    }
-  }
 
   async handleFileSelect(): Promise<void> {
     const files = this.fileInputEl.files;
@@ -1626,6 +1575,7 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
+    this.usedStreamKeys.clear();
     for (const msg of this.messages) {
       if (msg.role === "assistant") {
         const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use" || b.type === "toolCall") || false;
@@ -1671,7 +1621,8 @@ class OpenClawChatView extends ItemView {
         }
 
         // Fallback: check streamItemsMap for tool items (gateway may not include tool_use in contentBlocks)
-        const streamItems = this.plugin.settings.streamItemsMap?.[String(msg.timestamp)] || [];
+        // Keys are client-side timestamps; gateway timestamps differ, so match by proximity (within 60s)
+        const streamItems = this.findStreamItems(msg.timestamp);
         const hasStreamTools = streamItems.some((si: any) => si.type === "tool");
         if (hasStreamTools && msg.text) {
           // Collapsible for tool steps

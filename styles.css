@@ -19,27 +19,11 @@
   background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
   pointer-events: none;
 }
-.openclaw-model-select {
+.openclaw-model-label {
   font-size: 9px;
-  padding: 0px 14px 0px 6px;
-  height: 14px;
-  border-radius: 8px;
-  border: none;
-  background: rgba(128,128,128,0.12);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="5" viewBox="0 0 8 5"><path fill="%23999" d="M0 0l4 5 4-5z"/></svg>');
-  background-repeat: no-repeat;
-  background-position: right 2px center;
-  padding-right: 14px;
-}
-.openclaw-model-select:hover {
-  background-color: rgba(128,128,128,0.18);
-  color: var(--text-muted);
+  color: var(--text-faint);
+  white-space: nowrap;
+  line-height: 14px;
 }
 .openclaw-context-meter {
   flex: 1;
