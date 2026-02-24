@@ -1055,7 +1055,10 @@ class OpenClawChatView extends ItemView {
       const chip = this.attachPreviewEl.createDiv("openclaw-attach-chip");
 
       // Show thumbnail for images
-      if (att.vaultPath) {
+      if (att.base64 && att.mimeType) {
+        const src = `data:${att.mimeType};base64,${att.base64}`;
+        chip.createEl("img", { cls: "openclaw-attach-thumb", attr: { src } });
+      } else if (att.vaultPath) {
         try {
           const src = this.app.vault.adapter.getResourcePath(att.vaultPath);
           if (src) chip.createEl("img", { cls: "openclaw-attach-thumb", attr: { src } });
@@ -1226,9 +1229,13 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Save the current text segment before the tool call
+      // Save the NEW text since last captured segment before the tool call
       if (this.streamText) {
-        this.streamItems.push({ type: "text", text: this.streamText });
+        const capturedLen = this.streamItems.filter(i => i.type === "text").reduce((acc, i) => acc + (i.text?.length || 0), 0);
+        const newText = this.streamText.slice(capturedLen).trim();
+        if (newText) {
+          this.streamItems.push({ type: "text", text: newText });
+        }
       }
       // Freeze the current streaming bubble in place (don't delete it)
       if (this.streamEl) {
@@ -1297,9 +1304,20 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
-      // Capture the last text segment before finishing
-      if (this.streamText) {
-        this.streamItems.push({ type: "text", text: this.streamText });
+      // Use the final message text (authoritative)
+      const finalText = this.extractDeltaText(payload.message) || this.streamText || "";
+      // Only store stream items if there were tool calls (for interleaving)
+      const hasTools = this.streamItems.some(i => i.type === "tool");
+      if (hasTools) {
+        // Get the new text since last captured segment
+        const capturedLen = this.streamItems.filter(i => i.type === "text").reduce((acc, i) => acc + (i.text?.length || 0), 0);
+        const remaining = finalText.slice(capturedLen).trim();
+        if (remaining) {
+          this.streamItems.push({ type: "text", text: remaining });
+        }
+      } else {
+        // No tools — don't store text items (the history message is sufficient)
+        this.streamItems = [];
       }
       const items = [...this.streamItems];
       this.finishStream();
