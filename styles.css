@@ -21,12 +21,12 @@
 }
 .openclaw-model-select {
   font-size: 9px;
-  padding: 0px 6px;
+  padding: 0px 14px 0px 6px;
   height: 14px;
   border-radius: 8px;
   border: none;
-  background: rgba(128,128,128,0.08);
-  color: var(--text-faint);
+  background: rgba(128,128,128,0.12);
+  color: var(--text-muted);
   cursor: pointer;
   font-family: inherit;
   outline: none;
@@ -71,8 +71,8 @@
   line-height: 14px;
   border-radius: 8px;
   border: none;
-  background: rgba(128,128,128,0.08);
-  color: var(--text-faint);
+  background: rgba(128,128,128,0.12);
+  color: var(--text-muted);
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;

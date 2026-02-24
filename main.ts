@@ -627,7 +627,7 @@ class OpenClawChatView extends ItemView {
   private contextLabelEl!: HTMLElement;
   private modelSelectorEl!: HTMLSelectElement;
   private currentModel: string = "";
-  private availableModels: string[] = ["opus", "sonnet"];
+  private availableModels: { id: string; label: string }[] = []; // populated dynamically from gateway
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -660,11 +660,8 @@ class OpenClawChatView extends ItemView {
     // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Model selector
+    // Model selector (populated dynamically from gateway)
     this.modelSelectorEl = contextBar.createEl("select", { cls: "openclaw-model-select" });
-    for (const m of this.availableModels) {
-      this.modelSelectorEl.createEl("option", { value: m, text: m });
-    }
     this.modelSelectorEl.addEventListener("change", () => this.switchModel(this.modelSelectorEl.value));
 
     // Meter bar (inline, grows to fill space)
@@ -1008,16 +1005,31 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
-      // Update model selector
-      const model = main.model?.replace("claude-", "").split("-")[0] || "";
-      if (model && model !== this.currentModel) {
-        this.currentModel = model;
-        // Ensure model is in the list
-        if (!this.availableModels.includes(model)) {
-          this.availableModels.push(model);
-          this.modelSelectorEl.createEl("option", { value: model, text: model });
+      // Update model selector from session data
+      const fullModel = main.model || "";
+      if (fullModel && fullModel !== this.currentModel) {
+        this.currentModel = fullModel;
+        // Ensure model is in the dropdown
+        if (!this.availableModels.find(m => m.id === fullModel)) {
+          this.availableModels.push({ id: fullModel, label: this.shortModelName(fullModel) });
+          this.rebuildModelDropdown();
         }
-        this.modelSelectorEl.value = model;
+        this.modelSelectorEl.value = fullModel;
+      }
+      // Also add default model if different
+      const defModel = main.defaultModel || "";
+      if (defModel && !this.availableModels.find(m => m.id === defModel)) {
+        this.availableModels.push({ id: defModel, label: this.shortModelName(defModel) });
+        this.rebuildModelDropdown();
+      }
+      // Add fallback models if present
+      const fallbacks = main.fallbackModels || main.fallbacks || [];
+      for (const fb of fallbacks) {
+        const fbId = typeof fb === "string" ? fb : fb?.model || "";
+        if (fbId && !this.availableModels.find(m => m.id === fbId)) {
+          this.availableModels.push({ id: fbId, label: this.shortModelName(fbId) });
+          this.rebuildModelDropdown();
+        }
       }
     } catch { /* ignore */ }
   }
@@ -1088,6 +1100,33 @@ class OpenClawChatView extends ItemView {
     }
   }
 
+  private shortModelName(fullId: string): string {
+    // "anthropic/claude-opus-4-6" -> "Opus 4"
+    // "anthropic/claude-sonnet-4-5" -> "Sonnet 4"
+    // "openai/gpt-5.2" -> "GPT 5.2"
+    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
+    // For Claude models, extract family + major version
+    const claudeMatch = model.match(/claude-(\w+)-(\d+)/);
+    if (claudeMatch) {
+      const family = claudeMatch[1].charAt(0).toUpperCase() + claudeMatch[1].slice(1);
+      return `${family} ${claudeMatch[2]}`;
+    }
+    // For GPT models
+    const gptMatch = model.match(/gpt-([\d.]+)/);
+    if (gptMatch) return `GPT ${gptMatch[1]}`;
+    // Fallback: just capitalize and clean up
+    return model.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  private rebuildModelDropdown(): void {
+    const current = this.modelSelectorEl.value;
+    this.modelSelectorEl.empty();
+    for (const m of this.availableModels) {
+      this.modelSelectorEl.createEl("option", { value: m.id, text: m.label });
+    }
+    if (current) this.modelSelectorEl.value = current;
+  }
+
   async switchModel(model: string): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
@@ -1098,7 +1137,8 @@ class OpenClawChatView extends ItemView {
         idempotencyKey: "model-" + Date.now(),
       });
       this.currentModel = model;
-      new Notice(`Switched to ${model}`);
+      const label = this.availableModels.find(m => m.id === model)?.label || model;
+      new Notice(`Switched to ${label}`);
     } catch (e) {
       new Notice(`Model switch failed: ${e}`);
     }
