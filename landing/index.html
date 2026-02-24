@@ -248,48 +248,39 @@
   <h1>Your knowledge base<br>meets <span>your AI agent</span></h1>
   <p class="subtitle">ObsidianClaw brings OpenClaw's autonomous AI into Obsidian's sidebar. Your notes on the left, your agent on the right, working from the same files.</p>
   <div class="cta-group">
-    <button class="cta-btn" onclick="openModal()">⚡ Install the beta</button>
-    <a href="https://github.com/oscarhenrycollins/obsidianclaw" class="cta-secondary">View on GitHub →</a>
+    <button class="cta-btn" onclick="openModal()">⚡ Install plugin</button>
   </div>
-  <p class="cta-sub">Requires <a href="https://openclaw.ai">OpenClaw</a> + <a href="https://obsidian.md">Obsidian</a></p>
+  <p class="cta-sub">Requires <a href="https://openclaw.ai">OpenClaw</a> + <a href="https://obsidian.md">Obsidian</a> · <a href="https://botsetupguide.com">Full setup guide</a></p>
 </section>
 
 <!-- Install Modal -->
 <div class="modal-overlay" id="installModal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
-    <h2>Install the beta</h2>
-    <p class="modal-desc">We're in the Obsidian plugin store queue. For now, install via <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> (a plugin that installs betas from GitHub).</p>
+    <h2>Install</h2>
+    <p class="modal-desc">We're pending in the official plugin store. Install via BRAT for now:</p>
 
     <div class="install-steps">
       <div class="install-step">
         <div class="step-num">1</div>
         <div class="step-content">
-          <p>Search <strong>"BRAT"</strong> in Community Plugins</p>
-          <div class="step-detail">Install → Enable</div>
+          <p>Install <strong>BRAT</strong> from Community Plugins</p>
         </div>
       </div>
       <div class="install-step">
         <div class="step-num">2</div>
         <div class="step-content">
-          <p>BRAT → <strong>Add Beta Plugin</strong></p>
+          <p>BRAT → Add Beta Plugin:</p>
           <div class="copy-box" onclick="copyRepo(this)">
             <code>oscarhenrycollins/obsidianclaw</code>
             <span class="copy-icon">copy</span>
           </div>
         </div>
       </div>
-      <div class="install-step">
-        <div class="step-num">3</div>
-        <div class="step-content">
-          <p>Enter your gateway URL + token</p>
-          <div class="step-detail">Setup wizard opens automatically</div>
-        </div>
-      </div>
     </div>
 
     <div class="modal-note">
-      <strong>Coming soon to the plugin store</strong> — BRAT users auto-migrate, no action needed.
+      A setup wizard walks you through connecting. Need OpenClaw first? <a href="https://botsetupguide.com">Start here</a>.
     </div>
   </div>
 </div>
