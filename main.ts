@@ -382,6 +382,7 @@ interface ChatMessage {
   text: string;
   images: string[]; // data URIs or URLs
   timestamp: number;
+  contentBlocks?: any[]; // raw content array from history (preserves tool_use interleaving)
 }
 
 // ─── Onboarding Modal ────────────────────────────────────────────────
@@ -798,6 +799,7 @@ class OpenClawChatView extends ItemView {
               text,
               images,
               timestamp: m.timestamp ?? Date.now(),
+              contentBlocks: Array.isArray(m.content) ? m.content : undefined,
             };
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
@@ -1426,6 +1428,16 @@ class OpenClawChatView extends ItemView {
     }
   }
 
+  private cleanText(text: string): string {
+    text = text.replace(/Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g, "").trim();
+    text = text.replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, "").trim();
+    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, "").trim();
+    text = text.replace(/^\[media attached:.*?\]\s*/gm, "").trim();
+    text = text.replace(/^To send an image back.*$/gm, "").trim();
+    if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
+    return text;
+  }
+
   private extractDeltaText(msg: any): string {
     if (typeof msg === "string") return msg;
     // Gateway sends {role, content, timestamp} where content is [{type:"text", text:"..."}]
@@ -1457,49 +1469,29 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
-    const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
-      // For assistant messages with stored stream items, render interleaved text + tools
-      if (msg.role === "assistant") {
-        const key = String(msg.timestamp);
-        const stored = itemsMap[key];
-        const hasTextItems = stored?.some((s: StreamItem) => s.type === "text") || false;
-
-        if (stored && stored.length > 0 && hasTextItems) {
-          // Render items in order: text segments as bubbles, tool items as tool items
-          for (const item of stored) {
-            if (item.type === "text" && item.text.trim()) {
-              const chunkBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+      // For assistant messages: use content blocks if available (preserves tool interleaving)
+      if (msg.role === "assistant" && msg.contentBlocks) {
+        const hasTools = msg.contentBlocks.some((b: any) => b.type === "tool_use");
+        if (hasTools) {
+          for (const block of msg.contentBlocks) {
+            if (block.type === "text" && block.text?.trim()) {
+              const cleaned = this.cleanText(block.text);
+              if (!cleaned) continue;
+              const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
               try {
-                await MarkdownRenderer.render(this.app, item.text, chunkBubble, "", this.plugin);
+                await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
               } catch {
-                chunkBubble.createDiv({ text: item.text, cls: "openclaw-msg-text" });
+                bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
               }
-            } else if (item.type === "tool") {
-              this.messagesEl.appendChild(this.createStreamItemEl(item));
+            } else if (block.type === "tool_use") {
+              const { label, url } = this.buildToolLabel(block.name || "", block.input || {});
+              const el = this.createStreamItemEl({ type: "tool", label, url } as StreamItem);
+              this.messagesEl.appendChild(el);
             }
+            // Skip tool_result, thinking, etc.
           }
-          // Render images if any
-          if (msg.images && msg.images.length > 0) {
-            const imgBubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
-            const imgContainer = imgBubble.createDiv("openclaw-msg-images");
-            for (const src of msg.images) {
-              const img = imgContainer.createEl("img", { cls: "openclaw-msg-img", attr: { src, loading: "lazy" } });
-              img.addEventListener("click", () => {
-                const overlay = document.body.createDiv("openclaw-img-overlay");
-                overlay.createEl("img", { attr: { src } });
-                overlay.addEventListener("click", () => overlay.remove());
-              });
-            }
-          }
-          continue; // Skip normal rendering — we handled it via stream items
-        }
-
-        // Fallback: tool-only items (no text segments), insert before the bubble
-        if (stored && stored.length > 0) {
-          for (const item of stored) {
-            this.messagesEl.appendChild(this.createStreamItemEl(item));
-          }
+          continue; // Handled via content blocks
         }
       }
       const cls = msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
