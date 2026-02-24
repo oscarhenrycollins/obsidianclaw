@@ -625,6 +625,9 @@ class OpenClawChatView extends ItemView {
   private contextMeterEl!: HTMLElement;
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
+  private modelSelectorEl!: HTMLSelectElement;
+  private currentModel: string = "";
+  private availableModels: string[] = ["opus", "sonnet"];
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -659,15 +662,25 @@ class OpenClawChatView extends ItemView {
     this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
     this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
     const contextRow = contextBar.createDiv("openclaw-context-row");
-    this.contextLabelEl = contextRow.createSpan("openclaw-context-label");
+
+    // Model selector (far left)
+    this.modelSelectorEl = contextRow.createEl("select", { cls: "openclaw-model-select" });
+    for (const m of this.availableModels) {
+      const opt = this.modelSelectorEl.createEl("option", { value: m, text: m });
+      this.modelSelectorEl.appendChild(opt);
+    }
+    this.modelSelectorEl.addEventListener("change", () => this.switchModel(this.modelSelectorEl.value));
+
+    // Right side: percentage + buttons
+    const contextRight = contextRow.createDiv("openclaw-context-right");
+    this.contextLabelEl = contextRight.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
-    const contextActions = contextRow.createDiv("openclaw-context-actions");
-    const compactBtn = contextActions.createEl("button", { cls: "openclaw-context-btn", attr: { "aria-label": "Summarize conversation to free space" } });
+    const compactBtn = contextRight.createEl("button", { cls: "openclaw-context-btn" });
     compactBtn.textContent = "Compact";
-    compactBtn.addEventListener("click", () => this.compactSession());
-    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-context-btn", attr: { "aria-label": "Start fresh — your bot still remembers you via memory files" } });
+    compactBtn.addEventListener("click", () => this.confirmCompact());
+    const newSessionBtn = contextRight.createEl("button", { cls: "openclaw-context-btn" });
     newSessionBtn.textContent = "New";
-    newSessionBtn.addEventListener("click", () => this.newSession());
+    newSessionBtn.addEventListener("click", () => this.confirmNewSession());
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -993,9 +1006,39 @@ class OpenClawChatView extends ItemView {
       const pct = Math.min(100, Math.round((used / max) * 100));
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
+      this.contextLabelEl.textContent = `${pct}%`;
+      // Update model selector
       const model = main.model?.replace("claude-", "").split("-")[0] || "";
-      this.contextLabelEl.textContent = `${pct}% context` + (model ? ` · ${model}` : "");
+      if (model && model !== this.currentModel) {
+        this.currentModel = model;
+        // Ensure model is in the list
+        if (!this.availableModels.includes(model)) {
+          this.availableModels.push(model);
+          this.modelSelectorEl.createEl("option", { value: model, text: model });
+        }
+        this.modelSelectorEl.value = model;
+      }
     } catch { /* ignore */ }
+  }
+
+  confirmCompact(): void {
+    const modal = new ConfirmModal(this.app, {
+      title: "Compact Context",
+      message: "This saves important context to memory files, then summarizes the conversation to free up space. Your bot keeps all its memories — just the raw chat gets compressed.",
+      confirmText: "Compact",
+      onConfirm: () => this.compactSession(),
+    });
+    modal.open();
+  }
+
+  confirmNewSession(): void {
+    const modal = new ConfirmModal(this.app, {
+      title: "New Session",
+      message: "This archives the current conversation and starts fresh. Your bot still remembers you through its memory files — only the live chat resets.",
+      confirmText: "Start Fresh",
+      onConfirm: () => this.newSession(),
+    });
+    modal.open();
   }
 
   async compactSession(): Promise<void> {
@@ -1008,12 +1051,16 @@ class OpenClawChatView extends ItemView {
         deliver: false,
         idempotencyKey: "compact-" + Date.now(),
       });
-      // Refresh after a delay to let compaction finish
+      // Poll context meter to animate the decrease
+      const pollInterval = setInterval(async () => {
+        await this.updateContextMeter();
+      }, 2000);
       setTimeout(async () => {
+        clearInterval(pollInterval);
         this.hideBanner();
         await this.loadHistory();
         await this.updateContextMeter();
-      }, 8000);
+      }, 12000);
     } catch (e) {
       this.hideBanner();
       new Notice(`Compact failed: ${e}`);
@@ -1037,6 +1084,22 @@ class OpenClawChatView extends ItemView {
       new Notice("New session started");
     } catch (e) {
       new Notice(`New session failed: ${e}`);
+    }
+  }
+
+  async switchModel(model: string): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: this.plugin.settings.sessionKey,
+        message: `/model ${model}`,
+        deliver: false,
+        idempotencyKey: "model-" + Date.now(),
+      });
+      this.currentModel = model;
+      new Notice(`Switched to ${model}`);
+    } catch (e) {
+      new Notice(`Model switch failed: ${e}`);
     }
   }
 
@@ -1747,6 +1810,36 @@ export default class OpenClawPlugin extends Plugin {
       inputEl.value = message;
       inputEl.focus();
     }
+  }
+}
+
+// ─── Confirm Modal ──────────────────────────────────────────────────
+
+class ConfirmModal extends Modal {
+  private config: { title: string; message: string; confirmText: string; onConfirm: () => void };
+
+  constructor(app: App, config: { title: string; message: string; confirmText: string; onConfirm: () => void }) {
+    super(app);
+    this.config = config;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("openclaw-confirm-modal");
+    contentEl.createEl("h3", { text: this.config.title, cls: "openclaw-confirm-title" });
+    contentEl.createEl("p", { text: this.config.message, cls: "openclaw-confirm-message" });
+    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "openclaw-confirm-cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+    const confirmBtn = btnRow.createEl("button", { text: this.config.confirmText, cls: "openclaw-confirm-ok" });
+    confirmBtn.addEventListener("click", () => {
+      this.close();
+      this.config.onConfirm();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
   }
 }
 

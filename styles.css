@@ -13,7 +13,7 @@
 .openclaw-context-fill {
   height: 100%;
   background: var(--interactive-accent);
-  transition: width 0.5s ease, background 0.3s;
+  transition: width 1.2s ease, background 0.3s;
   width: 0%;
 }
 .openclaw-context-fill.openclaw-context-mid { background: #d4a843; }
@@ -22,7 +22,31 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 8px;
+  padding: 2px 6px;
+  gap: 4px;
+}
+.openclaw-model-select {
+  font-size: 9px;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 1px 4px;
+  cursor: pointer;
+  font-family: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+}
+.openclaw-model-select:hover {
+  border-color: var(--text-faint);
+}
+.openclaw-context-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 .openclaw-context-label {
   font-size: 9px;
@@ -30,24 +54,16 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.openclaw-context-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
 .openclaw-context-btn {
-  font-size: 10px;
-  padding: 2px 10px;
-  border-radius: 10px;
+  font-size: 9px;
+  padding: 1px 7px;
+  border-radius: 8px;
   border: none;
   background: rgba(128,128,128,0.08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   color: var(--text-faint);
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
-  position: relative;
 }
 .openclaw-context-btn:hover {
   background: rgba(128,128,128,0.18);
@@ -56,29 +72,46 @@
 .openclaw-context-btn:active {
   transform: scale(0.95);
 }
-/* Tooltip on long-press / hover */
-.openclaw-context-btn::after {
-  content: attr(aria-label);
-  position: absolute;
-  top: 22px;
-  right: 0;
-  width: 180px;
-  padding: 5px 8px;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.4;
-  z-index: 100;
-  white-space: normal;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s;
+
+/* Confirm modal */
+.openclaw-confirm-modal {
+  max-width: 320px;
 }
-.openclaw-context-btn:hover::after {
-  opacity: 1;
+.openclaw-confirm-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.openclaw-confirm-message {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+.openclaw-confirm-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.openclaw-confirm-cancel {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.openclaw-confirm-ok {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 13px;
+}
+.openclaw-confirm-ok:hover {
+  opacity: 0.9;
 }
 
 /* Container: fill all available space */
