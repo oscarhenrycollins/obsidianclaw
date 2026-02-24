@@ -468,8 +468,9 @@ class OnboardingModal extends Modal {
       placeholder: "ws://100.x.x.x:18789",
       cls: "openclaw-onboard-input",
     });
-    urlGroup.createDiv("openclaw-onboard-hint").innerHTML =
-      "Your Tailscale IP. Run <code>tailscale ip -4</code> on the gateway machine.";
+    const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
+    urlHint.appendText("Your Tailscale IP. Run this on the gateway machine:");
+    this.makeCopyBox(urlGroup, "tailscale ip -4");
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
@@ -480,10 +481,20 @@ class OnboardingModal extends Modal {
       placeholder: "Paste your gateway auth token",
       cls: "openclaw-onboard-input",
     });
-    tokenGroup.createDiv("openclaw-onboard-hint").innerHTML =
-      "Find it: <code>cat ~/.openclaw/openclaw.json | grep token</code>";
+    const tokenHint = tokenGroup.createDiv("openclaw-onboard-hint");
+    tokenHint.appendText("Find it by running this on the gateway machine:");
+    this.makeCopyBox(tokenGroup, "cat ~/.openclaw/openclaw.json | grep token");
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    // Troubleshooting (hidden until failure)
+    const troubleshoot = el.createDiv("openclaw-onboard-troubleshoot");
+    troubleshoot.style.display = "none";
+    troubleshoot.createEl("p", { text: "Not working? Try these on your gateway machine:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(troubleshoot, "openclaw doctor --fix");
+    this.makeCopyBox(troubleshoot, "openclaw gateway restart");
+    const troubleshootHint = troubleshoot.createDiv("openclaw-onboard-hint");
+    troubleshootHint.innerHTML = "Then make sure Tailscale is running on <strong>both</strong> this device and the gateway.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
@@ -501,6 +512,7 @@ class OnboardingModal extends Modal {
 
       testBtn.disabled = true;
       testBtn.textContent = "Connecting...";
+      troubleshoot.style.display = "none";
       this.showStatus("Testing connection...", "info");
 
       this.plugin.settings.gatewayUrl = url;
@@ -524,9 +536,24 @@ class OnboardingModal extends Modal {
         this.showStatus("✓ Connected!", "success");
         setTimeout(() => { this.step = 2; this.renderStep(); }, 800);
       } else {
-        this.showStatus("Could not connect. Check the URL and that OpenClaw is running.", "error");
+        this.showStatus("Could not connect. Try the troubleshooting steps below.", "error");
+        troubleshoot.style.display = "";
       }
     });
+  }
+
+  private makeCopyBox(parent: HTMLElement, command: string): HTMLElement {
+    const box = parent.createDiv("openclaw-copy-box");
+    box.createEl("code", { text: command });
+    const btn = box.createSpan("openclaw-copy-btn");
+    btn.textContent = "copy";
+    box.addEventListener("click", () => {
+      navigator.clipboard.writeText(command).then(() => {
+        btn.textContent = "✓";
+        setTimeout(() => btn.textContent = "copy", 1500);
+      });
+    });
+    return box;
   }
 
   // ─── Step 2: Device Pairing ──────────────────────────────────────

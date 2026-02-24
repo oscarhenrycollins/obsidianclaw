@@ -746,6 +746,48 @@
   color: var(--text-muted);
   margin: 12px 0;
 }
+.openclaw-copy-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  margin: 6px 0;
+  cursor: pointer;
+  transition: border-color .15s;
+  gap: 8px;
+}
+.openclaw-copy-box:hover {
+  border-color: var(--interactive-accent);
+}
+.openclaw-copy-box code {
+  font-size: 11px;
+  color: var(--text-normal);
+  background: none;
+  padding: 0;
+  flex: 1;
+  user-select: all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.openclaw-copy-btn {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  font-family: var(--font-interface);
+}
+.openclaw-copy-box:hover .openclaw-copy-btn {
+  color: var(--interactive-accent);
+}
+.openclaw-onboard-troubleshoot {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
 
 /* Smooth scrollbar */
 .openclaw-messages::-webkit-scrollbar {
