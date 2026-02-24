@@ -985,12 +985,13 @@ class OpenClawChatView extends ItemView {
   async updateContextMeter(): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
-      const result = await this.plugin.gateway.request("session.status", {
-        sessionKey: this.plugin.settings.sessionKey,
-      });
-      const ctx = result?.contextTokens || 0;
-      const max = result?.maxContextTokens || result?.contextLimit || 200000;
-      const pct = Math.min(100, Math.round((ctx / max) * 100));
+      const result = await this.plugin.gateway.request("sessions.list", {});
+      const sessions = result?.sessions || [];
+      const main = sessions.find((s: any) => s.key === "agent:main:main");
+      if (!main) return;
+      const used = main.totalTokens || 0;
+      const max = main.contextTokens || 200000;
+      const pct = Math.min(100, Math.round((used / max) * 100));
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = pct + "%";
@@ -1310,20 +1311,16 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record position for final interleaving
+      // Record position for interleaving
       if (this.streamText) {
         this.streamSplitPoints.push(this.streamText.length);
       }
-      // Freeze current text bubble, show tool, continue in new bubble
-      if (this.streamEl) {
-        this.streamEl.removeClass("openclaw-streaming");
-        this.streamEl = null;
-      }
+      // Keep text in one bubble, show tool name in typing indicator
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      this.appendToolCall(label, url, true);
-      this.typingEl.style.display = "none";
+      typingText.textContent = label;
+      this.typingEl.style.display = "";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
       this.deactivateLastToolItem();
@@ -1381,72 +1378,12 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
-      // Use the final message text (authoritative)
-      const finalText = this.extractDeltaText(payload.message) || this.streamText || "";
-      const toolItems = this.streamItems.filter(i => i.type === "tool");
-      
-      // Persist tool items with their text split points for interleaving on re-render
-      if (toolItems.length > 0 && this.streamSplitPoints.length > 0) {
-        const newItems: StreamItem[] = [];
-        let lastPos = 0;
-        let toolIdx = 0;
-        for (let splitPos of this.streamSplitPoints) {
-          // Snap to nearest paragraph break (\n\n) within 80 chars, or nearest \n
-          let bestPos = splitPos;
-          // Search backward for \n\n
-          for (let i = splitPos; i >= Math.max(lastPos, splitPos - 80); i--) {
-            if (finalText[i] === "\n" && finalText[i + 1] === "\n") { bestPos = i + 2; break; }
-          }
-          // If no \n\n found backward, search forward
-          if (bestPos === splitPos) {
-            for (let i = splitPos; i < Math.min(finalText.length, splitPos + 80); i++) {
-              if (finalText[i] === "\n" && finalText[i + 1] === "\n") { bestPos = i + 2; break; }
-            }
-          }
-          // Fallback: nearest single \n
-          if (bestPos === splitPos) {
-            const prev = finalText.lastIndexOf("\n", splitPos);
-            if (prev > lastPos) bestPos = prev + 1;
-            else {
-              const next = finalText.indexOf("\n", splitPos);
-              if (next !== -1 && next - splitPos < 40) bestPos = next + 1;
-            }
-          }
-          splitPos = bestPos;
-          const segment = finalText.slice(lastPos, splitPos).trim();
-          if (segment) newItems.push({ type: "text", text: segment });
-          if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
-          lastPos = splitPos;
-        }
-        while (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
-        const remaining = finalText.slice(lastPos).trim();
-        if (remaining) newItems.push({ type: "text", text: remaining });
-        this.streamItems = newItems;
-      } else if (toolItems.length > 0) {
-        this.streamItems = toolItems;
-      } else {
-        this.streamItems = [];
-      }
-      const items = [...this.streamItems];
       this.finishStream();
 
-      // Load history and re-render with interleaved items
-      this.loadHistory(true).then(async () => {
-        if (items.length > 0) {
-          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
-          if (lastAssistant) {
-            const key = String(lastAssistant.timestamp);
-            if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
-            this.plugin.settings.streamItemsMap[key] = items;
-            const keys = Object.keys(this.plugin.settings.streamItemsMap);
-            if (keys.length > 100) {
-              keys.sort().slice(0, keys.length - 100).forEach(k => delete this.plugin.settings.streamItemsMap![k]);
-            }
-            await this.plugin.saveSettings();
-          }
-        }
-        // Re-render with interleaved items now that data is saved
+      // Reload history — contentBlocks from gateway have proper tool interleaving
+      this.loadHistory().then(async () => {
         await this.renderMessages();
+        this.updateContextMeter();
       });
     } else if (payload.state === "aborted") {
       if (this.streamText) {
@@ -1568,15 +1505,9 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
-    const itemsMap = this.plugin.settings.streamItemsMap || {};
     for (const msg of this.messages) {
       if (msg.role === "assistant") {
-        // Check if content blocks have tool_use (gateway may include them)
-        const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use") || false;
-        // Check if we have persisted stream items with tools
-        const key = String(msg.timestamp);
-        const stored = itemsMap[key];
-        const storedTools = stored?.filter((s: StreamItem) => s.type === "tool") || [];
+        const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use" || b.type === "toolCall") || false;
 
         if (hasContentTools && msg.contentBlocks) {
           // Best case: content blocks have tools interleaved — use them directly
@@ -1590,41 +1521,16 @@ class OpenClawChatView extends ItemView {
               } catch {
                 bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
               }
-            } else if (block.type === "tool_use") {
-              const { label, url } = this.buildToolLabel(block.name || "", block.input || {});
+            } else if (block.type === "tool_use" || block.type === "toolCall") {
+              const { label, url } = this.buildToolLabel(block.name || "", block.input || block.arguments || {});
               const el = this.createStreamItemEl({ type: "tool", label, url } as StreamItem);
               this.messagesEl.appendChild(el);
             }
+            // Skip tool_result, toolResult, thinking blocks
           }
           continue;
         }
 
-        if (stored && stored.length > 0) {
-          const hasTextItems = stored.some((s: StreamItem) => s.type === "text");
-          if (hasTextItems) {
-            // Interleaved text + tools from stream capture
-            for (const item of stored) {
-              if (item.type === "text" && item.text?.trim()) {
-                const cleaned = this.cleanText(item.text);
-                if (!cleaned) continue;
-                const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
-                try {
-                  await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
-                } catch {
-                  bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
-                }
-              } else if (item.type === "tool") {
-                this.messagesEl.appendChild(this.createStreamItemEl(item));
-              }
-            }
-            continue; // Handled via stored items
-          }
-          // Tool-only items: render before text bubble
-          for (const item of storedTools) {
-            this.messagesEl.appendChild(this.createStreamItemEl(item));
-          }
-          // Fall through to render text bubble normally
-        }
       }
       const cls = msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
       const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`);
