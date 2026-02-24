@@ -778,6 +778,7 @@ class OpenClawChatView extends ItemView {
     this.plugin.chatView = this;
     if (this.plugin.gatewayConnected) {
       await this.loadHistory();
+      this.fetchAvailableModels();
     }
   }
 
@@ -1108,12 +1109,29 @@ class OpenClawChatView extends ItemView {
   }
 
   private fullModelName(fullId: string): string {
-    // "anthropic/claude-opus-4-6" -> "anthropic / claude-opus-4-6" (dropdown option)
     if (fullId.includes("/")) {
       const [provider, model] = fullId.split("/");
       return `${provider} / ${model}`;
     }
     return fullId;
+  }
+
+  async fetchAvailableModels(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      const result = await this.plugin.gateway.request("models.list", {});
+      const models = result?.models || result?.candidates || [];
+      for (const m of models) {
+        const id = typeof m === "string" ? m : (m.id || m.model || m.name || "");
+        if (id && !this.availableModels.find(am => am.id === id)) {
+          this.availableModels.push({ id, label: this.shortModelName(id) });
+        }
+      }
+      this.rebuildModelDropdown();
+      if (this.currentModel) this.modelSelectorEl.value = this.currentModel;
+    } catch {
+      // models.list may not be available — fall back to session data
+    }
   }
 
   private rebuildModelDropdown(): void {
@@ -1648,6 +1666,30 @@ class OpenClawChatView extends ItemView {
               targetEl.appendChild(el);
             }
             // Skip tool_result, toolResult, thinking blocks
+          }
+          continue;
+        }
+
+        // Fallback: check streamItemsMap for tool items (gateway may not include tool_use in contentBlocks)
+        const streamItems = this.plugin.settings.streamItemsMap?.[String(msg.timestamp)] || [];
+        const hasStreamTools = streamItems.some((si: any) => si.type === "tool");
+        if (hasStreamTools && msg.text) {
+          // Collapsible for tool steps
+          const detailsEl = this.messagesEl.createEl("details", { cls: "openclaw-intermediary" });
+          detailsEl.createEl("summary", { text: "Show steps" });
+          for (const si of streamItems) {
+            if (si.type === "tool") {
+              const el = this.createStreamItemEl(si as StreamItem);
+              detailsEl.appendChild(el);
+            }
+          }
+          // Final text bubble (outside collapsible)
+          const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+          try {
+            const cleaned = this.cleanText(msg.text);
+            if (cleaned) await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
+          } catch {
+            bubble.createDiv({ text: msg.text, cls: "openclaw-msg-text" });
           }
           continue;
         }
