@@ -6,7 +6,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 6px;
+  padding: 0px 6px 3px 6px;
+  position: relative;
+}
+.openclaw-context-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
+  pointer-events: none;
 }
 .openclaw-model-select {
   font-size: 9px;
@@ -228,10 +239,24 @@
   50% { opacity: 0.7; }
 }
 
-.openclaw-stream-container {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* Collapsible intermediary steps */
+.openclaw-intermediary {
+  margin: 8px 0;
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 8px;
+}
+.openclaw-intermediary summary {
+  font-size: 11px;
+  color: var(--text-faint);
+  cursor: pointer;
+  margin-bottom: 6px;
+  user-select: none;
+}
+.openclaw-intermediary summary:hover {
+  color: var(--text-muted);
+}
+.openclaw-intermediary[open] summary {
+  margin-bottom: 8px;
 }
 
 /* Markdown inside assistant messages */
