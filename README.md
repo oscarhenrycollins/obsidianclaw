@@ -57,7 +57,7 @@ Done. The device is remembered permanently.
 
 ## Troubleshooting
 
-**"Could not connect"** — Is Tailscale running on both devices? Is the gateway URL correct (`ws://<tailscale-ip>:18789`)? Is the token right?
+**"Could not connect" / "Disconnected"** — Most common cause: the gateway stopped. SSH into your gateway machine and run `openclaw gateway restart`. If that fixes it, the gateway had crashed. Also check: Is Tailscale running on both devices? Is the URL correct (`ws://<tailscale-ip>:18789`)? Is the token right?
 
 **"Pairing required"** — Every new device needs a one-time approval. Run `openclaw devices list` and `openclaw devices approve <requestId>` on your gateway machine, or approve from the dashboard.
 
