@@ -1238,18 +1238,26 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record where in the text this tool call happened
+      // Record where in the text this tool call happened — snap to nearest line break
       if (this.streamText) {
-        this.streamSplitPoints.push(this.streamText.length);
+        let pos = this.streamText.length;
+        // Look backwards for a newline to avoid cutting mid-word
+        const lastNewline = this.streamText.lastIndexOf("\n", pos);
+        if (lastNewline > (this.streamSplitPoints.length > 0 ? this.streamSplitPoints[this.streamSplitPoints.length - 1] : 0)) {
+          pos = lastNewline + 1;
+        }
+        this.streamSplitPoints.push(pos);
       }
-      // Don't freeze the streaming bubble — keep text flowing in one bubble
-      // Tool items render below the typing indicator
+      // Freeze the current streaming bubble in place
+      if (this.streamEl) {
+        this.streamEl.removeClass("openclaw-streaming");
+        this.streamEl = null; // Next text delta creates a new bubble below the tool item
+      }
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      // Show tool as the typing indicator text instead of a separate element
-      typingText.textContent = label;
-      this.typingEl.style.display = "";
+      this.appendToolCall(label, url, true);
+      this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
       this.deactivateLastToolItem();
@@ -1316,7 +1324,15 @@ class OpenClawChatView extends ItemView {
         const newItems: StreamItem[] = [];
         let lastPos = 0;
         let toolIdx = 0;
-        for (const splitPos of this.streamSplitPoints) {
+        for (let splitPos of this.streamSplitPoints) {
+          // Snap to nearest line break in the final text to avoid mid-word cuts
+          const nextNewline = finalText.indexOf("\n", splitPos > 0 ? splitPos - 1 : 0);
+          const prevNewline = finalText.lastIndexOf("\n", splitPos);
+          if (prevNewline > lastPos) {
+            splitPos = prevNewline + 1;
+          } else if (nextNewline !== -1 && nextNewline - splitPos < 20) {
+            splitPos = nextNewline + 1;
+          }
           const segment = finalText.slice(lastPos, splitPos).trim();
           if (segment) newItems.push({ type: "text", text: segment });
           if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
