@@ -1101,28 +1101,26 @@ class OpenClawChatView extends ItemView {
   }
 
   private shortModelName(fullId: string): string {
-    // "anthropic/claude-opus-4-6" -> "Opus 4"
-    // "anthropic/claude-sonnet-4-5" -> "Sonnet 4"
-    // "openai/gpt-5.2" -> "GPT 5.2"
+    // "anthropic/claude-opus-4-6" -> "opus-4-6" (selected display)
+    // Strip provider prefix, strip "claude-" prefix for brevity
     const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
-    // For Claude models, extract family + major version
-    const claudeMatch = model.match(/claude-(\w+)-(\d+)/);
-    if (claudeMatch) {
-      const family = claudeMatch[1].charAt(0).toUpperCase() + claudeMatch[1].slice(1);
-      return `${family} ${claudeMatch[2]}`;
+    return model.replace(/^claude-/, "");
+  }
+
+  private fullModelName(fullId: string): string {
+    // "anthropic/claude-opus-4-6" -> "anthropic / claude-opus-4-6" (dropdown option)
+    if (fullId.includes("/")) {
+      const [provider, model] = fullId.split("/");
+      return `${provider} / ${model}`;
     }
-    // For GPT models
-    const gptMatch = model.match(/gpt-([\d.]+)/);
-    if (gptMatch) return `GPT ${gptMatch[1]}`;
-    // Fallback: just capitalize and clean up
-    return model.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    return fullId;
   }
 
   private rebuildModelDropdown(): void {
     const current = this.modelSelectorEl.value;
     this.modelSelectorEl.empty();
     for (const m of this.availableModels) {
-      this.modelSelectorEl.createEl("option", { value: m.id, text: m.label });
+      this.modelSelectorEl.createEl("option", { value: m.id, text: this.fullModelName(m.id) });
     }
     if (current) this.modelSelectorEl.value = current;
   }
