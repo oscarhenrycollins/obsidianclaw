@@ -1238,26 +1238,16 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record where in the text this tool call happened — snap to nearest line break
+      // Record approximate position for final interleaving
       if (this.streamText) {
-        let pos = this.streamText.length;
-        // Look backwards for a newline to avoid cutting mid-word
-        const lastNewline = this.streamText.lastIndexOf("\n", pos);
-        if (lastNewline > (this.streamSplitPoints.length > 0 ? this.streamSplitPoints[this.streamSplitPoints.length - 1] : 0)) {
-          pos = lastNewline + 1;
-        }
-        this.streamSplitPoints.push(pos);
+        this.streamSplitPoints.push(this.streamText.length);
       }
-      // Freeze the current streaming bubble in place
-      if (this.streamEl) {
-        this.streamEl.removeClass("openclaw-streaming");
-        this.streamEl = null; // Next text delta creates a new bubble below the tool item
-      }
+      // Don't freeze text — keep streaming in one bubble. Show tool in typing indicator.
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      this.appendToolCall(label, url, true);
-      this.typingEl.style.display = "none";
+      typingText.textContent = label;
+      this.typingEl.style.display = "";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
       this.deactivateLastToolItem();
@@ -1325,14 +1315,28 @@ class OpenClawChatView extends ItemView {
         let lastPos = 0;
         let toolIdx = 0;
         for (let splitPos of this.streamSplitPoints) {
-          // Snap to nearest line break in the final text to avoid mid-word cuts
-          const nextNewline = finalText.indexOf("\n", splitPos > 0 ? splitPos - 1 : 0);
-          const prevNewline = finalText.lastIndexOf("\n", splitPos);
-          if (prevNewline > lastPos) {
-            splitPos = prevNewline + 1;
-          } else if (nextNewline !== -1 && nextNewline - splitPos < 20) {
-            splitPos = nextNewline + 1;
+          // Snap to nearest paragraph break (\n\n) within 80 chars, or nearest \n
+          let bestPos = splitPos;
+          // Search backward for \n\n
+          for (let i = splitPos; i >= Math.max(lastPos, splitPos - 80); i--) {
+            if (finalText[i] === "\n" && finalText[i + 1] === "\n") { bestPos = i + 2; break; }
           }
+          // If no \n\n found backward, search forward
+          if (bestPos === splitPos) {
+            for (let i = splitPos; i < Math.min(finalText.length, splitPos + 80); i++) {
+              if (finalText[i] === "\n" && finalText[i + 1] === "\n") { bestPos = i + 2; break; }
+            }
+          }
+          // Fallback: nearest single \n
+          if (bestPos === splitPos) {
+            const prev = finalText.lastIndexOf("\n", splitPos);
+            if (prev > lastPos) bestPos = prev + 1;
+            else {
+              const next = finalText.indexOf("\n", splitPos);
+              if (next !== -1 && next - splitPos < 40) bestPos = next + 1;
+            }
+          }
+          splitPos = bestPos;
           const segment = finalText.slice(lastPos, splitPos).trim();
           if (segment) newItems.push({ type: "text", text: segment });
           if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
