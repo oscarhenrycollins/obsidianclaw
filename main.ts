@@ -871,7 +871,8 @@ class OpenClawChatView extends ItemView {
 
   async sendMessage(): Promise<void> {
     let text = this.inputEl.value.trim();
-    if (!text && this.pendingAttachments.length === 0) return;
+    const hasAttachments = this.pendingAttachments.length > 0;
+    if (!text && !hasAttachments) return;
     if (this.sending) return;
     if (!this.plugin.gateway?.connected) {
       new Notice("Not connected to OpenClaw gateway");
@@ -893,12 +894,17 @@ class OpenClawChatView extends ItemView {
         if (att.base64 && att.mimeType) {
           // Image: send via attachments field (gateway saves to disk)
           gatewayAttachments.push({ type: "image", mimeType: att.mimeType, content: att.base64 });
+          // Show preview in chat history
+          userImages.push(`data:${att.mimeType};base64,${att.base64}`);
         } else {
           // Text files: append to message as before
           fullMessage = (fullMessage ? fullMessage + "\n\n" : "") + att.content;
         }
       }
-      if (!text) text = `📎 ${this.pendingAttachments.map(a => a.name).join(", ")}`;
+      if (!text) {
+        text = `📎 ${this.pendingAttachments.map(a => a.name).join(", ")}`;
+        fullMessage = text;
+      }
       this.pendingAttachments = [];
       this.attachPreviewEl.style.display = "none";
     }
@@ -1307,8 +1313,26 @@ class OpenClawChatView extends ItemView {
       const finalText = this.extractDeltaText(payload.message) || this.streamText || "";
       const toolItems = this.streamItems.filter(i => i.type === "tool");
       
-      // Only persist tool items (text comes from history — no duplication risk)
-      this.streamItems = toolItems;
+      // Persist tool items with their text split points for interleaving on re-render
+      if (toolItems.length > 0 && this.streamSplitPoints.length > 0) {
+        const newItems: StreamItem[] = [];
+        let lastPos = 0;
+        let toolIdx = 0;
+        for (const splitPos of this.streamSplitPoints) {
+          const segment = finalText.slice(lastPos, splitPos).trim();
+          if (segment) newItems.push({ type: "text", text: segment });
+          if (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
+          lastPos = splitPos;
+        }
+        while (toolIdx < toolItems.length) newItems.push(toolItems[toolIdx++]);
+        const remaining = finalText.slice(lastPos).trim();
+        if (remaining) newItems.push({ type: "text", text: remaining });
+        this.streamItems = newItems;
+      } else if (toolItems.length > 0) {
+        this.streamItems = toolItems;
+      } else {
+        this.streamItems = [];
+      }
       const items = [...this.streamItems];
       this.finishStream();
 
@@ -1481,12 +1505,31 @@ class OpenClawChatView extends ItemView {
           continue;
         }
 
-        if (storedTools.length > 0) {
-          // Render stored tool items before the text bubble
+        if (stored && stored.length > 0) {
+          const hasTextItems = stored.some((s: StreamItem) => s.type === "text");
+          if (hasTextItems) {
+            // Interleaved text + tools from stream capture
+            for (const item of stored) {
+              if (item.type === "text" && item.text?.trim()) {
+                const cleaned = this.cleanText(item.text);
+                if (!cleaned) continue;
+                const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+                try {
+                  await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
+                } catch {
+                  bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
+                }
+              } else if (item.type === "tool") {
+                this.messagesEl.appendChild(this.createStreamItemEl(item));
+              }
+            }
+            continue; // Handled via stored items
+          }
+          // Tool-only items: render before text bubble
           for (const item of storedTools) {
             this.messagesEl.appendChild(this.createStreamItemEl(item));
           }
-          // Fall through to render the text bubble normally
+          // Fall through to render text bubble normally
         }
       }
       const cls = msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
