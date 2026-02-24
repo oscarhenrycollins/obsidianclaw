@@ -1,5 +1,85 @@
 /* ObsidianClaw — Modern Chat UI */
 
+/* Context bar */
+.openclaw-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  gap: 8px;
+  flex-shrink: 0;
+}
+.openclaw-context-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.openclaw-context-meter {
+  flex: 1;
+  max-width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.openclaw-context-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--interactive-accent);
+  transition: width 0.5s ease, background 0.3s;
+  width: 0%;
+}
+.openclaw-context-fill.openclaw-context-mid {
+  background: #d4a843;
+}
+.openclaw-context-fill.openclaw-context-high {
+  background: #c44;
+}
+.openclaw-context-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.openclaw-context-info {
+  font-size: 9px;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: help;
+  flex-shrink: 0;
+}
+.openclaw-context-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.openclaw-compact-btn,
+.openclaw-new-session-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.openclaw-compact-btn:hover,
+.openclaw-new-session-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
 /* Container: fill all available space */
 .openclaw-chat-container {
   display: flex;

@@ -622,6 +622,9 @@ class OpenClawChatView extends ItemView {
   private streamItems: StreamItem[] = [];
   private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
   private streamEl: HTMLElement | null = null;
+  private contextMeterEl!: HTMLElement;
+  private contextFillEl!: HTMLElement;
+  private contextLabelEl!: HTMLElement;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -651,9 +654,21 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
-    // Header (hidden, status dot moved to input row)
-    const header = container.createDiv("openclaw-chat-header");
-    header.createSpan({ text: "OpenClaw", cls: "openclaw-header-title" });
+    // Context bar
+    const contextBar = container.createDiv("openclaw-context-bar");
+    const contextLeft = contextBar.createDiv("openclaw-context-left");
+    this.contextMeterEl = contextLeft.createDiv("openclaw-context-meter");
+    this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
+    this.contextLabelEl = contextLeft.createSpan("openclaw-context-label");
+    this.contextLabelEl.textContent = "";
+    // Info tooltip
+    const infoBtn = contextLeft.createEl("span", { cls: "openclaw-context-info", attr: { "aria-label": "Context = how much the AI remembers from this chat. Compact to free space. New session for a clean start." } });
+    infoBtn.textContent = "?";
+    const contextActions = contextBar.createDiv("openclaw-context-actions");
+    const compactBtn = contextActions.createEl("button", { cls: "openclaw-compact-btn", text: "Compact" });
+    compactBtn.addEventListener("click", () => this.compactSession());
+    const newSessionBtn = contextActions.createEl("button", { cls: "openclaw-new-session-btn", text: "New" });
+    newSessionBtn.addEventListener("click", () => this.newSession());
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -804,6 +819,7 @@ class OpenClawChatView extends ItemView {
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
         await this.renderMessages();
+        this.updateContextMeter();
       }
     } catch (e) {
       console.error("[ObsidianClaw] Failed to load history:", e);
@@ -963,6 +979,62 @@ class OpenClawChatView extends ItemView {
       });
     } catch {
       // ignore
+    }
+  }
+
+  async updateContextMeter(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      const result = await this.plugin.gateway.request("session.status", {
+        sessionKey: this.plugin.settings.sessionKey,
+      });
+      const ctx = result?.contextTokens || 0;
+      const max = result?.maxContextTokens || result?.contextLimit || 200000;
+      const pct = Math.min(100, Math.round((ctx / max) * 100));
+      this.contextFillEl.style.width = pct + "%";
+      this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
+      this.contextLabelEl.textContent = pct + "%";
+    } catch { /* ignore */ }
+  }
+
+  async compactSession(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      this.showBanner("Compacting context...");
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: this.plugin.settings.sessionKey,
+        message: "/compact",
+        deliver: false,
+      });
+      // Refresh after a delay
+      setTimeout(async () => {
+        this.hideBanner();
+        await this.loadHistory();
+        await this.updateContextMeter();
+      }, 5000);
+    } catch (e) {
+      this.hideBanner();
+      new Notice(`Compact failed: ${e}`);
+    }
+  }
+
+  async newSession(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: this.plugin.settings.sessionKey,
+        message: "/new",
+        deliver: false,
+      });
+      // Clear local state
+      this.messages = [];
+      if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+      await this.plugin.saveSettings();
+      this.messagesEl.empty();
+      await this.updateContextMeter();
+      new Notice("New session started");
+    } catch (e) {
+      new Notice(`New session failed: ${e}`);
     }
   }
 
@@ -1238,16 +1310,20 @@ class OpenClawChatView extends ItemView {
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
       if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record approximate position for final interleaving
+      // Record position for final interleaving
       if (this.streamText) {
         this.streamSplitPoints.push(this.streamText.length);
       }
-      // Don't freeze text — keep streaming in one bubble. Show tool in typing indicator.
+      // Freeze current text bubble, show tool, continue in new bubble
+      if (this.streamEl) {
+        this.streamEl.removeClass("openclaw-streaming");
+        this.streamEl = null;
+      }
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
       this.currentToolCalls.push(label);
       this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      typingText.textContent = label;
-      this.typingEl.style.display = "";
+      this.appendToolCall(label, url, true);
+      this.typingEl.style.display = "none";
     } else if ((stream === "tool" || toolName) && phase === "result") {
       // Tool finished — remove animated dots from last tool item
       this.deactivateLastToolItem();
