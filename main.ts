@@ -1676,7 +1676,7 @@ class OpenClawChatView extends ItemView {
     // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
     text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
     text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
-    text = text.replace(/^VOICE:[^\s\n]+\.b64$/gm, "").trim();
+    text = text.replace(/^VOICE:[^\s\n]+\.txt$/gm, "").trim();
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
   }
@@ -1684,7 +1684,7 @@ class OpenClawChatView extends ItemView {
   /** Extract VOICE:filename references from message text */
   private extractVoiceRefs(text: string): string[] {
     const refs: string[] = [];
-    const re = /^VOICE:([^\s\n]+\.b64)$/gm;
+    const re = /^VOICE:([^\s\n]+\.txt)$/gm;
     let match: RegExpExecArray | null;
     while ((match = re.exec(text)) !== null) {
       refs.push(match[1].trim());
@@ -1703,9 +1703,9 @@ class OpenClawChatView extends ItemView {
       const raw = atob(b64Content.trim());
       const bytes = new Uint8Array(raw.length);
       for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      // Detect audio type from original filename encoded in the b64 filename
-      // Format: voice-{timestamp}.{ext}.b64
-      const origExt = filename.replace(/\.b64$/, "").split(".").pop()?.toLowerCase() || "mp3";
+      // Detect audio type from original filename
+      // Format: voice-{timestamp}.{ext}.txt → extract {ext}
+      const origExt = filename.replace(/\.txt$/, "").split(".").pop()?.toLowerCase() || "mp3";
       const mimeMap: Record<string, string> = {
         opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
         mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
