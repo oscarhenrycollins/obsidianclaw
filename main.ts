@@ -29,13 +29,23 @@ interface OpenClawSettings {
 }
 
 const DEFAULT_SETTINGS: OpenClawSettings = {
-  gatewayUrl: "ws://127.0.0.1:18789",
+  gatewayUrl: "",
   token: "",
   sessionKey: "main",
   onboardingComplete: false,
 };
 
 // ─── Device Identity (Ed25519) ───────────────────────────────────────
+
+/** Normalize a gateway URL: accepts ws://, wss://, http://, https:// and returns ws:// or wss://. Returns null if invalid. */
+function normalizeGatewayUrl(raw: string): string | null {
+  let url = raw.trim();
+  if (url.startsWith("https://")) url = "wss://" + url.slice(8);
+  else if (url.startsWith("http://")) url = "ws://" + url.slice(7);
+  if (!url.startsWith("ws://") && !url.startsWith("wss://")) return null;
+  // Strip trailing slash for consistency
+  return url.replace(/\/+$/, "");
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -222,10 +232,10 @@ class GatewayClient {
   private doConnect(): void {
     if (this.closed) return;
 
-    // Validate URL before connecting
-    const url = this.opts.url;
-    if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
-      console.error("[ObsidianClaw] Invalid gateway URL: must start with ws:// or wss://");
+    // Normalize and validate URL
+    const url = normalizeGatewayUrl(this.opts.url);
+    if (!url) {
+      console.error("[ObsidianClaw] Invalid gateway URL: must be a valid ws://, wss://, http://, or https:// URL");
       return;
     }
 
@@ -439,12 +449,13 @@ class OnboardingModal extends Modal {
 
     el.createEl("h3", { text: "You'll need" });
     const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
-    list.createEl("li").innerHTML = "<strong>OpenClaw running</strong> — on a VPS, Mac, or PC (<a href='https://botsetupguide.com'>setup guide</a>)";
-    list.createEl("li").innerHTML = "<strong>Tailscale installed</strong> — on both your gateway machine and this device (<a href='https://tailscale.com/download'>tailscale.com</a>)";
-    list.createEl("li").innerHTML = "<strong>Auth token</strong> — from <code>~/.openclaw/openclaw.json</code> on your gateway machine";
+    list.createEl("li").innerHTML = "<strong>OpenClaw running</strong> — on a Mac, PC, or VPS (<a href='https://botsetupguide.com'>setup guide</a>)";
+    list.createEl("li").innerHTML = "<strong>Tailscale installed</strong> — on both the gateway machine and this device (<a href='https://tailscale.com/download'>tailscale.com</a>)";
+    list.createEl("li").innerHTML = "<strong>Tailscale Serve enabled</strong> — so the gateway is reachable securely over your tailnet";
+    list.createEl("li").innerHTML = "<strong>Auth token</strong> — from your gateway machine";
 
     el.createEl("p", {
-      text: "Tailscale creates a private encrypted network between your devices. No ports to open, no VPN to configure.",
+      text: "Tailscale creates a private encrypted network between your devices. Tailscale Serve adds HTTPS automatically — no ports to open, no VPN to configure.",
       cls: "openclaw-onboard-hint",
     });
 
@@ -466,12 +477,12 @@ class OnboardingModal extends Modal {
     const urlInput = urlGroup.createEl("input", {
       type: "text",
       value: this.plugin.settings.gatewayUrl || "",
-      placeholder: "ws://100.x.x.x:18789",
+      placeholder: "wss://your-machine.tail1234.ts.net",
       cls: "openclaw-onboard-input",
     });
     const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.appendText("Your Tailscale IP. Run this on the gateway machine:");
-    this.makeCopyBox(urlGroup, "tailscale ip -4");
+    urlHint.appendText("Your Tailscale Serve URL. Run this on the gateway machine to find it:");
+    this.makeCopyBox(urlGroup, "tailscale serve status");
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
@@ -491,11 +502,14 @@ class OnboardingModal extends Modal {
     // Troubleshooting (hidden until failure)
     const troubleshoot = el.createDiv("openclaw-onboard-troubleshoot");
     troubleshoot.style.display = "none";
-    troubleshoot.createEl("p", { text: "Not working? Try these on your gateway machine:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(troubleshoot, "openclaw doctor --fix");
-    this.makeCopyBox(troubleshoot, "openclaw gateway restart");
+    troubleshoot.createEl("p", { text: "Not connecting? Run these on your gateway machine:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(troubleshoot, "openclaw doctor --fix && openclaw gateway restart");
+    troubleshoot.createEl("p", { text: "Verify Tailscale Serve is active:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(troubleshoot, "tailscale serve status");
+    troubleshoot.createEl("p", { text: "If Tailscale Serve is not set up yet:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(troubleshoot, "tailscale serve --bg http://127.0.0.1:18789");
     const troubleshootHint = troubleshoot.createDiv("openclaw-onboard-hint");
-    troubleshootHint.innerHTML = "Then make sure Tailscale is running on <strong>both</strong> this device and the gateway.";
+    troubleshootHint.innerHTML = "Make sure Tailscale is running on <strong>both</strong> this device and the gateway machine.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
@@ -506,8 +520,9 @@ class OnboardingModal extends Modal {
       const token = tokenInput.value.trim();
 
       if (!url) { this.showStatus("Enter a gateway URL", "error"); return; }
-      if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
-        this.showStatus("URL must start with ws:// or wss://", "error"); return;
+      const normalizedUrl = normalizeGatewayUrl(url);
+      if (!normalizedUrl) {
+        this.showStatus("Enter a valid URL (e.g. wss://your-machine.tail1234.ts.net)", "error"); return;
       }
       if (!token) { this.showStatus("Enter your auth token", "error"); return; }
 
@@ -516,14 +531,16 @@ class OnboardingModal extends Modal {
       troubleshoot.style.display = "none";
       this.showStatus("Testing connection...", "info");
 
-      this.plugin.settings.gatewayUrl = url;
+      // Save the normalized URL (wss:// or ws://)
+      urlInput.value = normalizedUrl;
+      this.plugin.settings.gatewayUrl = normalizedUrl;
       this.plugin.settings.token = token;
       await this.plugin.saveSettings();
 
       const ok = await new Promise<boolean>((resolve) => {
         const timeout = setTimeout(() => { tc.stop(); resolve(false); }, 8000);
         const tc = new GatewayClient({
-          url, token,
+          url: normalizedUrl, token,
           onHello: () => { clearTimeout(timeout); tc.stop(); resolve(true); },
           onClose: () => {},
         });
@@ -2081,13 +2098,20 @@ export default class OpenClawPlugin extends Plugin {
     this.gatewayConnected = false;
     this.chatView?.updateStatus();
 
-    const url = this.settings.gatewayUrl.trim();
-    if (!url) return;
+    const rawUrl = this.settings.gatewayUrl.trim();
+    if (!rawUrl) return;
 
-    // Security: validate URL scheme
-    if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
-      new Notice("OpenClaw: Invalid gateway URL (must be ws:// or wss://)");
+    // Normalize URL (accept https:// and http:// as well)
+    const url = normalizeGatewayUrl(rawUrl);
+    if (!url) {
+      new Notice("OpenClaw: Invalid gateway URL. Use your Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)");
       return;
+    }
+
+    // Persist the normalized form if it changed
+    if (url !== rawUrl) {
+      this.settings.gatewayUrl = url;
+      await this.saveSettings();
     }
 
     // Get or create device identity for scope authorization
@@ -2246,13 +2270,14 @@ class OpenClawSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Gateway URL")
-      .setDesc("WebSocket URL (e.g., ws://127.0.0.1:18789 or ws://100.x.x.x:18789 via Tailscale)")
+      .setDesc("Tailscale Serve URL (e.g., wss://your-machine.tail1234.ts.net). Also accepts https://, ws://, or http://.")
       .addText((text) =>
         text
-          .setPlaceholder("ws://127.0.0.1:18789")
+          .setPlaceholder("wss://your-machine.tail1234.ts.net")
           .setValue(this.plugin.settings.gatewayUrl)
           .onChange(async (value) => {
-            this.plugin.settings.gatewayUrl = value;
+            const normalized = normalizeGatewayUrl(value);
+            this.plugin.settings.gatewayUrl = normalized || value;
             await this.plugin.saveSettings();
           })
       );
