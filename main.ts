@@ -887,12 +887,12 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
-    // Context bar (all on one line)
+    // Context bar (all on one line): [chat ▾] [═══░░░] 42% [Compact]
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Session pill
+    // Chat pill (session picker)
     this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-ctx-pill" });
-    this.sessionPillEl.title = "Sessions";
+    this.sessionPillEl.title = "Switch chat";
     this.sessionPillEl.addEventListener("click", () => this.openSessionPicker());
     this.updateSessionPill();
 
@@ -904,16 +904,14 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
 
-    // Model pill
-    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-ctx-pill openclaw-ctx-pill-model" });
-    this.modelLabelEl.title = "Models";
-    this.modelLabelEl.addEventListener("click", () => this.openModelPicker());
-
     // Compact button
     const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
     compactBtn.textContent = "Compact";
     compactBtn.title = "Summarize chat to free context space";
     compactBtn.addEventListener("click", () => this.compactSession());
+
+    // Hidden model label (internal tracking only)
+    this.modelLabelEl = createDiv();
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -935,7 +933,10 @@ class OpenClawChatView extends ItemView {
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
-    // Status dot overlays the send button as a badge
+    // Brain button (model picker)
+    const brainBtn = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
+    brainBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.58.67 3 1.74 4.01C4.68 12.6 4 14.07 4 15.5A5.5 5.5 0 0 0 9.5 21h0a2 2 0 0 0 2-2v0"/><path d="M14.5 2A5.5 5.5 0 0 1 20 7.5c0 1.58-.67 3-1.74 4.01C19.32 12.6 20 14.07 20 15.5a5.5 5.5 0 0 1-5.5 5.5h0a2 2 0 0 1-2-2v0"/><path d="M12 2v17"/><path d="M8 8h1"/><path d="M15 8h1"/><path d="M8 14h1"/><path d="M15 14h1"/></svg>`;
+    brainBtn.addEventListener("click", () => this.openModelPicker());
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
     attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
@@ -1379,8 +1380,14 @@ class OpenClawChatView extends ItemView {
   updateSessionPill(): void {
     if (!this.sessionPillEl) return;
     const sessionKey = this.plugin.settings.sessionKey || "main";
+    // Show friendly name
+    let display = sessionKey;
+    if (sessionKey === "main") display = "Main";
+    else if (sessionKey.startsWith("telegram:")) display = "Telegram";
+    else if (sessionKey.startsWith("discord:")) display = "Discord";
+    else if (sessionKey.startsWith("whatsapp:")) display = "WhatsApp";
     this.sessionPillEl.empty();
-    this.sessionPillEl.createSpan({ text: sessionKey, cls: "openclaw-ctx-pill-text" });
+    this.sessionPillEl.createSpan({ text: display, cls: "openclaw-ctx-pill-text" });
     this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
   }
 
@@ -2318,13 +2325,13 @@ export default class OpenClawPlugin extends Plugin {
 
 // ─── Confirm Modal ──────────────────────────────────────────────────
 
-// ─── Session Picker Modal ────────────────────────────────────────────
+// ─── Chat Picker Modal (was: Session Picker) ────────────────────────
 
 class SessionPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
   private sessions: any[] = [];
-  private agentId = "main";
+  private assistantName = "main";
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2341,7 +2348,7 @@ class SessionPickerModal extends Modal {
         this.plugin.gateway?.request("agents.list", {}),
         this.plugin.gateway?.request("sessions.list", {}),
       ]);
-      this.agentId = agentResult?.defaultId || "main";
+      this.assistantName = agentResult?.defaultId || "main";
       this.sessions = sessionResult?.sessions || [];
     } catch { this.sessions = []; }
 
@@ -2350,50 +2357,67 @@ class SessionPickerModal extends Modal {
 
   onClose(): void { this.contentEl.empty(); }
 
+  /** Turn a raw session key into a friendly display name */
+  private friendlyName(shortKey: string, session: any): string {
+    // Use displayName from gateway if available and not too long
+    if (session.displayName && session.displayName.length < 30) {
+      return session.displayName;
+    }
+    // "main" → "Main"
+    if (shortKey === "main") return "Main";
+    // "telegram:slash:123" → "Telegram"
+    if (shortKey.startsWith("telegram:")) return "Telegram";
+    if (shortKey.startsWith("discord:")) return "Discord";
+    if (shortKey.startsWith("whatsapp:")) return "WhatsApp";
+    if (shortKey.startsWith("signal:")) return "Signal";
+    // Fallback: clean up colons
+    return shortKey.replace(/:/g, " / ");
+  }
+
   private render(): void {
     const { contentEl } = this;
     contentEl.empty();
 
     const currentSessionKey = this.plugin.settings.sessionKey || "main";
 
-    // ─── Agent header ──────────────────────────────────────────
+    // ─── Assistant header ──────────────────────────────────────
     const header = contentEl.createDiv("openclaw-picker-header");
     const headerLeft = header.createDiv("openclaw-picker-header-left");
-    headerLeft.createSpan({ text: `Agent: ${this.agentId}`, cls: "openclaw-picker-agent" });
+    headerLeft.createSpan({ text: `Assistant: ${this.assistantName}`, cls: "openclaw-picker-agent" });
 
     const headerRight = header.createDiv("openclaw-picker-header-right");
     const cogBtn = headerRight.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
     cogBtn.title = "Plugin settings";
     cogBtn.addEventListener("click", () => {
       this.close();
-      // Open Obsidian settings to our plugin tab
       (this.app as any).setting?.open?.();
       (this.app as any).setting?.openTabById?.("openclaw");
     });
 
-    const agentHint = contentEl.createDiv("openclaw-picker-hint");
-    agentHint.innerHTML = "Want more agents? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
+    const hint = contentEl.createDiv("openclaw-picker-hint");
+    hint.innerHTML = "Want more assistants? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
 
-    // ─── Session list ──────────────────────────────────────────
-    const agentPrefix = `agent:${this.agentId}:`;
-    const agentSessions = this.sessions.filter((s: any) =>
+    // ─── Chat list ─────────────────────────────────────────────
+    const agentPrefix = `agent:${this.assistantName}:`;
+    const chats = this.sessions.filter((s: any) =>
       s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
     );
 
     const list = contentEl.createDiv("openclaw-picker-list");
 
-    for (const session of agentSessions) {
+    for (const session of chats) {
       const shortKey = session.key.slice(agentPrefix.length);
       const isCurrent = shortKey === currentSessionKey;
       const used = session.totalTokens || 0;
       const max = session.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
+      const name = this.friendlyName(shortKey, session);
 
       const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
 
       const left = row.createDiv("openclaw-picker-row-left");
       if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
-      left.createSpan({ text: shortKey });
+      left.createSpan({ text: name });
 
       const right = row.createDiv("openclaw-picker-row-right");
       const meter = right.createDiv("openclaw-picker-meter");
@@ -2403,24 +2427,23 @@ class SessionPickerModal extends Modal {
       else if (pct > 60) fill.addClass("mid");
       right.createSpan({ text: `${pct}%`, cls: "openclaw-picker-pct" });
 
-      // Delete button (not for current session)
+      // Delete button (not for current chat)
       if (!isCurrent) {
         const delBtn = right.createEl("button", { text: "✕", cls: "openclaw-picker-del" });
-        delBtn.title = "Delete session";
+        delBtn.title = "Delete chat";
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
             await this.plugin.gateway?.request("sessions.delete", { key: session.key });
             this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
             this.render();
-            new Notice(`Deleted: ${shortKey}`);
+            new Notice(`Deleted: ${name}`);
           } catch (err) {
             new Notice(`Delete failed: ${err}`);
           }
         });
       }
 
-      // Click to switch (not current)
       if (!isCurrent) {
         row.addEventListener("click", async () => {
           this.plugin.settings.sessionKey = shortKey;
@@ -2428,20 +2451,20 @@ class SessionPickerModal extends Modal {
           this.close();
           this.chatView.updateSessionPill();
           await this.plugin.connectGateway();
-          new Notice(`Session: ${shortKey}`);
+          new Notice(`Chat: ${name}`);
         });
       }
     }
 
-    // + New session
+    // + New chat
     const newRow = list.createDiv("openclaw-picker-row openclaw-picker-add");
-    newRow.createSpan({ text: "+ New session" });
+    newRow.createSpan({ text: "+ New chat" });
     newRow.addEventListener("click", () => {
       this.close();
       new ConfirmModal(this.app, {
-        title: "Start new session?",
-        message: "Archives the current conversation and starts fresh. Memory files are preserved.",
-        confirmText: "Start fresh",
+        title: "Start a new chat?",
+        message: "Archives the current conversation and starts a new one. Your assistant keeps all its memories.",
+        confirmText: "New chat",
         onConfirm: () => {
           this.chatView.newSession();
           this.chatView.updateSessionPill();
@@ -2489,10 +2512,7 @@ class ModelPickerModal extends Modal {
       left.createSpan({ text: m.name || m.id });
 
       const right = row.createDiv("openclaw-picker-row-right");
-      const tags: string[] = [];
-      if (m.provider) tags.push(m.provider);
-      if (m.contextWindow) tags.push(`${Math.round(m.contextWindow / 1000)}k`);
-      right.createSpan({ text: tags.join(" · "), cls: "openclaw-picker-meta" });
+      if (m.provider) right.createSpan({ text: m.provider, cls: "openclaw-picker-meta" });
 
       if (!isCurrent) {
         row.addEventListener("click", async () => {
@@ -2515,9 +2535,9 @@ class ModelPickerModal extends Modal {
       }
     }
 
-    // Footer hint
+    // Footer
     const footer = contentEl.createDiv("openclaw-picker-hint openclaw-picker-footer");
-    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Configure them on your gateway.</a>";
+    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Add them in your gateway config.</a>";
   }
 
   onClose(): void { this.contentEl.empty(); }

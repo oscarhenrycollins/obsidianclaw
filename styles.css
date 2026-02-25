@@ -487,6 +487,26 @@
 }
 
 /* Attach button */
+.openclaw-brain-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.openclaw-brain-btn:hover {
+  color: var(--text-muted);
+  background: rgba(128,128,128,0.1);
+}
+
 .openclaw-attach-btn {
   width: 28px;
   height: 28px;
@@ -999,9 +1019,7 @@
   text-overflow: ellipsis;
   max-width: 100px;
 }
-.openclaw-ctx-pill-model .openclaw-ctx-pill-text {
-  max-width: 80px;
-}
+
 .openclaw-ctx-pill-arrow {
   font-size: 7px;
   color: var(--text-faint);
