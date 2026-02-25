@@ -900,13 +900,11 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
 
-    // Action buttons
-    const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
-    compactBtn.textContent = "Compact";
-    compactBtn.addEventListener("click", () => this.confirmCompact());
-    const newSessionBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
-    newSessionBtn.textContent = "New";
-    newSessionBtn.addEventListener("click", () => this.confirmNewSession());
+    // Session management button (opens modal with compact / new / switch)
+    const manageBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
+    manageBtn.textContent = "⚙";
+    manageBtn.title = "Session management";
+    manageBtn.addEventListener("click", () => this.openSessionManager());
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -1369,23 +1367,8 @@ class OpenClawChatView extends ItemView {
     } catch { /* ignore */ }
   }
 
-  confirmCompact(): void {
-    const modal = new ConfirmModal(this.app, {
-      title: "Compact Context",
-      message: "This saves important context to memory files, then summarizes the conversation to free up space. Your bot keeps all its memories — just the raw chat gets compressed.",
-      confirmText: "Compact",
-      onConfirm: () => this.compactSession(),
-    });
-    modal.open();
-  }
-
-  confirmNewSession(): void {
-    const modal = new ConfirmModal(this.app, {
-      title: "New Session",
-      message: "This archives the current conversation and starts fresh. Your bot still remembers you through its memory files — only the live chat resets.",
-      confirmText: "Start Fresh",
-      onConfirm: () => this.newSession(),
-    });
+  openSessionManager(): void {
+    const modal = new SessionManagerModal(this.app, this.plugin, this);
     modal.open();
   }
 
@@ -2303,6 +2286,125 @@ export default class OpenClawPlugin extends Plugin {
 }
 
 // ─── Confirm Modal ──────────────────────────────────────────────────
+
+// ─── Session Manager Modal ───────────────────────────────────────────
+
+class SessionManagerModal extends Modal {
+  plugin: OpenClawPlugin;
+  chatView: OpenClawChatView;
+  private sessions: any[] = [];
+
+  constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
+    super(app);
+    this.plugin = plugin;
+    this.chatView = chatView;
+  }
+
+  async onOpen(): Promise<void> {
+    this.modalEl.addClass("openclaw-session-manager");
+    this.contentEl.createEl("h2", { text: "Session Manager" });
+    this.contentEl.createDiv("openclaw-sm-loading").textContent = "Loading sessions...";
+
+    try {
+      const result = await this.plugin.gateway?.request("sessions.list", {});
+      this.sessions = result?.sessions || [];
+    } catch { this.sessions = []; }
+
+    this.render();
+  }
+
+  onClose(): void { this.contentEl.empty(); }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    // ─── Current Session ───────────────────────────────────────
+    contentEl.createEl("h2", { text: "Session Manager" });
+
+    const currentKey = this.plugin.settings.sessionKey || "main";
+    const resolvedKey = `agent:main:${currentKey}`;
+    const currentSession = this.sessions.find((s: any) => s.key === resolvedKey);
+
+    const currentSection = contentEl.createDiv("openclaw-sm-current");
+    currentSection.createEl("h3", { text: "Current session" });
+
+    if (currentSession) {
+      const used = currentSession.totalTokens || 0;
+      const max = currentSession.contextTokens || 200000;
+      const pct = Math.min(100, Math.round((used / max) * 100));
+      const model = currentSession.model || "unknown";
+      const info = currentSection.createDiv("openclaw-sm-session-info");
+      info.innerHTML = `<strong>${currentKey}</strong> · ${this.shortModel(model)} · ${pct}% context used`;
+    } else {
+      currentSection.createEl("p", { text: `Session: ${currentKey}`, cls: "openclaw-sm-hint" });
+    }
+
+    const actionRow = currentSection.createDiv("openclaw-sm-actions");
+
+    const compactBtn = actionRow.createEl("button", { text: "Compact context", cls: "mod-cta" });
+    compactBtn.title = "Summarize the conversation to free up space. Your agent keeps all its memories.";
+    compactBtn.addEventListener("click", () => {
+      this.close();
+      this.chatView.compactSession();
+    });
+
+    const newBtn = actionRow.createEl("button", { text: "Start fresh" });
+    newBtn.title = "Archive this conversation and start a new one. Memory files are preserved.";
+    newBtn.addEventListener("click", () => {
+      this.close();
+      new ConfirmModal(this.app, {
+        title: "Start fresh session?",
+        message: "This archives the current conversation and starts a new one. Your agent still remembers you through its memory files — only the live chat resets.",
+        confirmText: "Start fresh",
+        onConfirm: () => this.chatView.newSession(),
+      }).open();
+    });
+
+    // ─── Other Sessions ────────────────────────────────────────
+    const otherSessions = this.sessions.filter((s: any) =>
+      s.key !== resolvedKey && s.key.startsWith("agent:") && !s.key.includes(":cron:")
+    );
+
+    if (otherSessions.length > 0) {
+      contentEl.createEl("h3", { text: "Switch session" });
+      const sessionList = contentEl.createDiv("openclaw-sm-list");
+
+      for (const session of otherSessions) {
+        const shortKey = session.key.replace(/^agent:main:/, "");
+        const used = session.totalTokens || 0;
+        const max = session.contextTokens || 200000;
+        const pct = Math.min(100, Math.round((used / max) * 100));
+        const model = session.model || "";
+
+        const item = sessionList.createDiv("openclaw-sm-item");
+        const itemInfo = item.createDiv("openclaw-sm-item-info");
+        itemInfo.createEl("strong", { text: shortKey });
+        if (model) itemInfo.createSpan({ text: ` · ${this.shortModel(model)} · ${pct}%`, cls: "openclaw-sm-hint" });
+
+        const switchBtn = item.createEl("button", { text: "Switch", cls: "openclaw-sm-switch-btn" });
+        switchBtn.addEventListener("click", async () => {
+          this.plugin.settings.sessionKey = shortKey;
+          await this.plugin.saveSettings();
+          this.close();
+          await this.plugin.connectGateway();
+          new Notice(`Switched to session: ${shortKey}`);
+        });
+      }
+    }
+
+    // ─── Hint ──────────────────────────────────────────────────
+    const hint = contentEl.createDiv("openclaw-sm-footer");
+    hint.innerHTML = "<strong>Compact</strong> summarizes the chat to free space. <strong>Start fresh</strong> archives and resets. Both preserve your agent's memory files.";
+  }
+
+  private shortModel(fullId: string): string {
+    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
+    return model.replace(/^claude-/, "");
+  }
+}
+
+// ─── Confirm Modal ───────────────────────────────────────────────────
 
 class ConfirmModal extends Modal {
   private config: { title: string; message: string; confirmText: string; onConfirm: () => void };
