@@ -1782,7 +1782,6 @@ class OpenClawChatView extends ItemView {
     const barEl = progressEl.createDiv("openclaw-audio-bar");
 
     let audio: HTMLAudioElement | null = null;
-    let blobUrl: string | null = null;
 
     playBtn.addEventListener("click", async () => {
       if (audio && !audio.paused) {
@@ -1793,17 +1792,25 @@ class OpenClawChatView extends ItemView {
 
       if (!audio) {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const fs = require("fs") as typeof import("fs");
-          const buffer = fs.readFileSync(audioPath);
-          const ext = audioPath.split(".").pop()?.toLowerCase() || "opus";
-          const mimeMap: Record<string, string> = {
-            opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
-            mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
-          };
-          const blob = new Blob([buffer], { type: mimeMap[ext] || "audio/ogg; codecs=opus" });
-          blobUrl = URL.createObjectURL(blob);
-          audio = new Audio(blobUrl);
+          // Copy audio file into vault so Obsidian can serve it
+          const fileName = audioPath.split("/").pop() || "voice.mp3";
+          const vaultPath = `openclaw-attachments/voice/${fileName}`;
+
+          // Ensure directory exists
+          const dir = "openclaw-attachments/voice";
+          if (!(await this.app.vault.adapter.exists(dir))) {
+            await this.app.vault.createFolder(dir);
+          }
+
+          // Read source file and write to vault
+          const nodeFs = require("fs") as typeof import("fs");
+          const fileBuffer = nodeFs.readFileSync(audioPath);
+          await this.app.vault.adapter.writeBinary(vaultPath, fileBuffer);
+
+          // Get Obsidian resource URL for the vault file
+          const resourceUrl = this.app.vault.adapter.getResourcePath(vaultPath);
+
+          audio = new Audio(resourceUrl);
           audio.addEventListener("timeupdate", () => {
             if (audio && audio.duration) {
               barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
@@ -1813,7 +1820,19 @@ class OpenClawChatView extends ItemView {
             playBtn.textContent = "▶ Voice message";
             barEl.style.width = "0%";
           });
-        } catch {
+          audio.addEventListener("error", () => {
+            // Fallback: try direct file:// URL
+            const fallbackAudio = new Audio("file://" + audioPath);
+            audio = fallbackAudio;
+            fallbackAudio.addEventListener("timeupdate", () => {
+              if (fallbackAudio.duration) barEl.style.width = `${(fallbackAudio.currentTime / fallbackAudio.duration) * 100}%`;
+            });
+            fallbackAudio.addEventListener("ended", () => { playBtn.textContent = "▶ Voice message"; barEl.style.width = "0%"; });
+            playBtn.textContent = "⏸ Playing...";
+            fallbackAudio.play().catch(() => { playBtn.textContent = "⚠ Audio unavailable"; playBtn.disabled = true; });
+          });
+        } catch (e) {
+          console.error("[ObsidianClaw] Audio load failed:", e);
           playBtn.textContent = "⚠ Audio unavailable";
           playBtn.disabled = true;
           return;
@@ -1821,7 +1840,7 @@ class OpenClawChatView extends ItemView {
       }
 
       playBtn.textContent = "⏸ Playing...";
-      await audio.play();
+      audio.play().catch(() => { playBtn.textContent = "⚠ Audio unavailable"; playBtn.disabled = true; });
     });
   }
 
