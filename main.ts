@@ -890,13 +890,13 @@ class OpenClawChatView extends ItemView {
     // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Unified context pill (session / model — opens switcher)
-    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-context-pill" });
-    this.sessionPillEl.title = "Switch session or model";
-    this.sessionPillEl.addEventListener("click", () => this.openSwitcher());
-    this.updateContextPill();
+    // Session pill
+    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-ctx-pill" });
+    this.sessionPillEl.title = "Sessions";
+    this.sessionPillEl.addEventListener("click", () => this.openSessionPicker());
+    this.updateSessionPill();
 
-    // Meter bar (inline, grows to fill space)
+    // Meter bar
     this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
     this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
 
@@ -904,14 +904,16 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
 
+    // Model pill
+    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-ctx-pill openclaw-ctx-pill-model" });
+    this.modelLabelEl.title = "Models";
+    this.modelLabelEl.addEventListener("click", () => this.openModelPicker());
+
     // Compact button
     const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
     compactBtn.textContent = "Compact";
     compactBtn.title = "Summarize chat to free context space";
     compactBtn.addEventListener("click", () => this.compactSession());
-
-    // Hidden model label (used internally for tracking, not displayed separately)
-    this.modelLabelEl = createDiv();
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -1369,27 +1371,36 @@ class OpenClawChatView extends ItemView {
       const fullModel = main.model || "";
       if (fullModel && fullModel !== this.currentModel) {
         this.currentModel = fullModel;
-        this.modelLabelEl.textContent = this.shortModelName(fullModel);
-        this.updateContextPill();
+        this.updateModelPill();
       }
     } catch { /* ignore */ }
   }
 
-  updateContextPill(): void {
+  updateSessionPill(): void {
     if (!this.sessionPillEl) return;
     const sessionKey = this.plugin.settings.sessionKey || "main";
-    const model = this.currentModel ? this.shortModelName(this.currentModel) : "";
     this.sessionPillEl.empty();
-    const text = model ? `${sessionKey} / ${model}` : sessionKey;
-    this.sessionPillEl.createSpan({ text, cls: "openclaw-context-pill-label" });
-    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-context-pill-arrow" });
+    this.sessionPillEl.createSpan({ text: sessionKey, cls: "openclaw-ctx-pill-text" });
+    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
   }
 
-  // Keep old name as alias for external callers
-  updateSessionPill(): void { this.updateContextPill(); }
+  updateModelPill(): void {
+    if (!this.modelLabelEl) return;
+    const model = this.currentModel ? this.shortModelName(this.currentModel) : "model";
+    this.modelLabelEl.empty();
+    this.modelLabelEl.createSpan({ text: model, cls: "openclaw-ctx-pill-text" });
+    this.modelLabelEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
+  }
 
-  openSwitcher(): void {
-    new SwitcherModal(this.app, this.plugin, this).open();
+  // Alias for external callers
+  updateContextPill(): void { this.updateSessionPill(); this.updateModelPill(); }
+
+  openSessionPicker(): void {
+    new SessionPickerModal(this.app, this.plugin, this).open();
+  }
+
+  openModelPicker(): void {
+    new ModelPickerModal(this.app, this.plugin, this).open();
   }
 
   async compactSession(): Promise<void> {
@@ -2307,13 +2318,13 @@ export default class OpenClawPlugin extends Plugin {
 
 // ─── Confirm Modal ──────────────────────────────────────────────────
 
-// ─── Unified Switcher Modal ──────────────────────────────────────────
+// ─── Session Picker Modal ────────────────────────────────────────────
 
-class SwitcherModal extends Modal {
+class SessionPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
   private sessions: any[] = [];
-  private models: any[] = [];
+  private agentId = "main";
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2322,20 +2333,17 @@ class SwitcherModal extends Modal {
   }
 
   async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-sw");
-    this.contentEl.createDiv("openclaw-sw-loading").textContent = "Loading...";
+    this.modalEl.addClass("openclaw-picker");
+    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading...";
 
     try {
-      const [sessionResult, modelResult] = await Promise.all([
+      const [agentResult, sessionResult] = await Promise.all([
+        this.plugin.gateway?.request("agents.list", {}),
         this.plugin.gateway?.request("sessions.list", {}),
-        this.plugin.gateway?.request("models.list", {}),
       ]);
+      this.agentId = agentResult?.defaultId || "main";
       this.sessions = sessionResult?.sessions || [];
-      this.models = modelResult?.models || [];
-    } catch {
-      this.sessions = [];
-      this.models = [];
-    }
+    } catch { this.sessions = []; }
 
     this.render();
   }
@@ -2347,18 +2355,32 @@ class SwitcherModal extends Modal {
     contentEl.empty();
 
     const currentSessionKey = this.plugin.settings.sessionKey || "main";
-    const currentModel = this.chatView.currentModel || "";
 
-    // ─── SESSION section ───────────────────────────────────────
-    const sessionSection = contentEl.createDiv("openclaw-sw-section");
-    sessionSection.createDiv({ text: "Session", cls: "openclaw-sw-label" });
+    // ─── Agent header ──────────────────────────────────────────
+    const header = contentEl.createDiv("openclaw-picker-header");
+    const headerLeft = header.createDiv("openclaw-picker-header-left");
+    headerLeft.createSpan({ text: `Agent: ${this.agentId}`, cls: "openclaw-picker-agent" });
 
-    const agentPrefix = "agent:main:";
+    const headerRight = header.createDiv("openclaw-picker-header-right");
+    const cogBtn = headerRight.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
+    cogBtn.title = "Plugin settings";
+    cogBtn.addEventListener("click", () => {
+      this.close();
+      // Open Obsidian settings to our plugin tab
+      (this.app as any).setting?.open?.();
+      (this.app as any).setting?.openTabById?.("openclaw");
+    });
+
+    const agentHint = contentEl.createDiv("openclaw-picker-hint");
+    agentHint.innerHTML = "Want more agents? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
+
+    // ─── Session list ──────────────────────────────────────────
+    const agentPrefix = `agent:${this.agentId}:`;
     const agentSessions = this.sessions.filter((s: any) =>
       s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
     );
 
-    const sessionList = sessionSection.createDiv("openclaw-sw-list");
+    const list = contentEl.createDiv("openclaw-picker-list");
 
     for (const session of agentSessions) {
       const shortKey = session.key.slice(agentPrefix.length);
@@ -2366,28 +2388,45 @@ class SwitcherModal extends Modal {
       const used = session.totalTokens || 0;
       const max = session.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
-      const model = session.model || "";
 
-      const row = sessionList.createDiv({ cls: `openclaw-sw-row${isCurrent ? " active" : ""}` });
-      const left = row.createDiv("openclaw-sw-row-left");
-      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-sw-dot" });
+      const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
+
+      const left = row.createDiv("openclaw-picker-row-left");
+      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
       left.createSpan({ text: shortKey });
 
-      const right = row.createDiv("openclaw-sw-row-right");
-      right.createSpan({ text: this.shortModel(model), cls: "openclaw-sw-meta" });
-      const meter = right.createDiv("openclaw-sw-meter");
-      const fill = meter.createDiv("openclaw-sw-fill");
+      const right = row.createDiv("openclaw-picker-row-right");
+      const meter = right.createDiv("openclaw-picker-meter");
+      const fill = meter.createDiv("openclaw-picker-fill");
       fill.style.width = pct + "%";
       if (pct > 80) fill.addClass("high");
       else if (pct > 60) fill.addClass("mid");
-      right.createSpan({ text: `${pct}%`, cls: "openclaw-sw-pct" });
+      right.createSpan({ text: `${pct}%`, cls: "openclaw-picker-pct" });
 
+      // Delete button (not for current session)
+      if (!isCurrent) {
+        const delBtn = right.createEl("button", { text: "✕", cls: "openclaw-picker-del" });
+        delBtn.title = "Delete session";
+        delBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          try {
+            await this.plugin.gateway?.request("sessions.delete", { key: session.key });
+            this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
+            this.render();
+            new Notice(`Deleted: ${shortKey}`);
+          } catch (err) {
+            new Notice(`Delete failed: ${err}`);
+          }
+        });
+      }
+
+      // Click to switch (not current)
       if (!isCurrent) {
         row.addEventListener("click", async () => {
           this.plugin.settings.sessionKey = shortKey;
           await this.plugin.saveSettings();
           this.close();
-          this.chatView.updateContextPill();
+          this.chatView.updateSessionPill();
           await this.plugin.connectGateway();
           new Notice(`Session: ${shortKey}`);
         });
@@ -2395,7 +2434,7 @@ class SwitcherModal extends Modal {
     }
 
     // + New session
-    const newRow = sessionList.createDiv("openclaw-sw-row openclaw-sw-add");
+    const newRow = list.createDiv("openclaw-picker-row openclaw-picker-add");
     newRow.createSpan({ text: "+ New session" });
     newRow.addEventListener("click", () => {
       this.close();
@@ -2405,31 +2444,55 @@ class SwitcherModal extends Modal {
         confirmText: "Start fresh",
         onConfirm: () => {
           this.chatView.newSession();
-          this.chatView.updateContextPill();
+          this.chatView.updateSessionPill();
         },
       }).open();
     });
+  }
+}
 
-    // ─── MODEL section ─────────────────────────────────────────
-    const modelSection = contentEl.createDiv("openclaw-sw-section");
-    modelSection.createDiv({ text: "Model", cls: "openclaw-sw-label" });
+// ─── Model Picker Modal ─────────────────────────────────────────────
 
-    const modelList = modelSection.createDiv("openclaw-sw-list openclaw-sw-model-list");
+class ModelPickerModal extends Modal {
+  plugin: OpenClawPlugin;
+  chatView: OpenClawChatView;
 
-    for (const m of this.models) {
+  constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
+    super(app);
+    this.plugin = plugin;
+    this.chatView = chatView;
+  }
+
+  async onOpen(): Promise<void> {
+    this.modalEl.addClass("openclaw-picker");
+    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
+
+    let models: any[] = [];
+    try {
+      const result = await this.plugin.gateway?.request("models.list", {});
+      models = result?.models || [];
+    } catch { models = []; }
+
+    const currentModel = this.chatView.currentModel || "";
+    const { contentEl } = this;
+    contentEl.empty();
+
+    const list = contentEl.createDiv("openclaw-picker-list openclaw-picker-model-list");
+
+    for (const m of models) {
       const fullId = `${m.provider}/${m.id}`;
       const isCurrent = fullId === currentModel || m.id === currentModel;
-      const row = modelList.createDiv({ cls: `openclaw-sw-row${isCurrent ? " active" : ""}` });
+      const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
 
-      const left = row.createDiv("openclaw-sw-row-left");
-      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-sw-dot" });
+      const left = row.createDiv("openclaw-picker-row-left");
+      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
       left.createSpan({ text: m.name || m.id });
 
-      const right = row.createDiv("openclaw-sw-row-right");
+      const right = row.createDiv("openclaw-picker-row-right");
       const tags: string[] = [];
       if (m.provider) tags.push(m.provider);
       if (m.contextWindow) tags.push(`${Math.round(m.contextWindow / 1000)}k`);
-      right.createSpan({ text: tags.join(" · "), cls: "openclaw-sw-meta" });
+      right.createSpan({ text: tags.join(" · "), cls: "openclaw-picker-meta" });
 
       if (!isCurrent) {
         row.addEventListener("click", async () => {
@@ -2443,7 +2506,7 @@ class SwitcherModal extends Modal {
               idempotencyKey: "model-" + Date.now(),
             });
             this.chatView.currentModel = fullId;
-            this.chatView.updateContextPill();
+            this.chatView.updateModelPill();
             new Notice(`Model: ${m.name || m.id}`);
           } catch (e) {
             new Notice(`Failed: ${e}`);
@@ -2451,13 +2514,13 @@ class SwitcherModal extends Modal {
         });
       }
     }
+
+    // Footer hint
+    const footer = contentEl.createDiv("openclaw-picker-hint openclaw-picker-footer");
+    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Configure them on your gateway.</a>";
   }
 
-  private shortModel(fullId: string): string {
-    if (!fullId) return "";
-    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
-    return model.replace(/^claude-/, "");
-  }
+  onClose(): void { this.contentEl.empty(); }
 }
 
 // ─── Confirm Modal ───────────────────────────────────────────────────
