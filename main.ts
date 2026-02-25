@@ -1696,7 +1696,7 @@ class OpenClawChatView extends ItemView {
   private async fetchVoiceFromGateway(filename: string): Promise<string | null> {
     if (!this.plugin.gateway?.connected) return null;
     try {
-      const result = await this.plugin.gateway.request("agents.files.get", { name: filename });
+      const result = await this.plugin.gateway.request("agents.files.get", { agentId: "main", name: filename });
       const b64Content = result?.file?.content;
       if (!b64Content || result?.file?.missing) return null;
       // Decode base64 to binary
