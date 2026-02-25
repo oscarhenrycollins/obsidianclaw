@@ -732,6 +732,13 @@ class OpenClawChatView extends ItemView {
   private fileInputEl!: HTMLInputElement;
   private pendingAttachments: { name: string; content: string; vaultPath?: string; base64?: string; mimeType?: string }[] = [];
   private sending = false;
+  private recording = false;
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
+
+  private readonly micSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+  private readonly sendSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+  private readonly stopSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
   private bannerEl!: HTMLElement;
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
@@ -821,7 +828,7 @@ class OpenClawChatView extends ItemView {
     this.abortBtn.style.display = "none";
     const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
     this.sendBtn = sendWrapper.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
-    this.sendBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
+    this.sendBtn.innerHTML = this.micSvg;
     this.reconnectBtn = sendWrapper.createEl("button", { cls: "openclaw-reconnect-btn", attr: { "aria-label": "Reconnect" } });
     this.reconnectBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
     this.reconnectBtn.style.display = "none";
@@ -849,7 +856,10 @@ class OpenClawChatView extends ItemView {
         }
       }
     });
-    this.inputEl.addEventListener("input", () => this.autoResize());
+    this.inputEl.addEventListener("input", () => {
+      this.autoResize();
+      this.updateSendButton();
+    });
     this.inputEl.addEventListener("focus", () => {
       setTimeout(() => {
         this.inputEl.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -868,7 +878,15 @@ class OpenClawChatView extends ItemView {
         }
       }
     });
-    this.sendBtn.addEventListener("click", () => this.sendMessage());
+    this.sendBtn.addEventListener("click", () => {
+      if (this.recording) {
+        this.stopRecording();
+      } else if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
+        this.sendMessage();
+      } else {
+        this.startRecording();
+      }
+    });
     this.abortBtn.addEventListener("click", () => this.abortMessage());
 
     // Initial state
@@ -1004,6 +1022,109 @@ class OpenClawChatView extends ItemView {
     // Strip "NO_REPLY" responses
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") text = "";
     return { text, images };
+  }
+
+  private updateSendButton(): void {
+    if (this.recording) {
+      this.sendBtn.innerHTML = this.stopSvg;
+      this.sendBtn.setAttribute("aria-label", "Stop recording");
+      this.sendBtn.classList.add("openclaw-recording");
+    } else if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
+      this.sendBtn.innerHTML = this.sendSvg;
+      this.sendBtn.setAttribute("aria-label", "Send");
+      this.sendBtn.classList.remove("openclaw-recording");
+    } else {
+      this.sendBtn.innerHTML = this.micSvg;
+      this.sendBtn.setAttribute("aria-label", "Record voice");
+      this.sendBtn.classList.remove("openclaw-recording");
+    }
+  }
+
+  private async startRecording(): Promise<void> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.recordedChunks = [];
+
+      // Try opus first, fall back to default
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+
+      this.mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      this.mediaRecorder.addEventListener("dataavailable", (e) => {
+        if (e.data.size > 0) this.recordedChunks.push(e.data);
+      });
+      this.mediaRecorder.addEventListener("stop", () => {
+        stream.getTracks().forEach(t => t.stop());
+        this.finishRecording();
+      });
+
+      this.mediaRecorder.start();
+      this.recording = true;
+      this.updateSendButton();
+      this.inputEl.placeholder = "Recording... tap ■ to stop";
+    } catch (e) {
+      console.error("[ObsidianClaw] Mic access failed:", e);
+      new Notice("Microphone access denied");
+    }
+  }
+
+  private stopRecording(): void {
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      this.mediaRecorder.stop();
+    }
+    this.recording = false;
+    this.updateSendButton();
+    this.inputEl.placeholder = "Message...";
+  }
+
+  private async finishRecording(): Promise<void> {
+    if (this.recordedChunks.length === 0) return;
+    const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || "audio/webm" });
+    this.recordedChunks = [];
+
+    // Convert to base64
+    const arrayBuf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+    const mime = blob.type || "audio/webm";
+
+    // Upload to gateway static dir via the agent (exec), and send VOICE: ref
+    // For now: send as AUDIO_DATA in message text, agent handles transcription
+    const marker = `AUDIO_DATA:${mime};base64,${b64}`;
+
+    // Show voice message in local UI
+    this.messages.push({ role: "user", text: "🎤 Voice message", images: [], timestamp: Date.now() });
+    await this.renderMessages();
+
+    // Send to gateway
+    const runId = generateId();
+    this.streamRunId = runId;
+    this.streamText = "";
+    this.abortBtn.style.display = "";
+    this.typingEl.style.display = "";
+    const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
+    if (thinkText) thinkText.textContent = "Thinking";
+    this.scrollToBottom();
+
+    try {
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: this.plugin.settings.sessionKey,
+        message: marker,
+        deliver: false,
+        idempotencyKey: runId,
+      });
+    } catch (e) {
+      this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
+      this.streamRunId = null;
+      this.streamText = null;
+      this.abortBtn.style.display = "none";
+      await this.renderMessages();
+    }
   }
 
   async sendMessage(): Promise<void> {
@@ -1677,6 +1798,9 @@ class OpenClawChatView extends ItemView {
     text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
     text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
     text = text.replace(/^VOICE:[^\s\n]+$/gm, "").trim();
+    // Strip inbound voice data (shown as "🎤 Voice message" in UI)
+    text = text.replace(/^AUDIO_DATA:[^\n]+$/gm, "").trim();
+    if (text === "🎤 Voice message") text = "🎤 Voice message"; // keep the label
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
   }

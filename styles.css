@@ -901,3 +901,12 @@
   border-radius: 2px;
   transition: width 0.2s linear;
 }
+
+/* Recording state */
+.openclaw-send-btn.openclaw-recording {
+  animation: openclaw-pulse-red 1.2s ease-in-out infinite;
+}
+@keyframes openclaw-pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
