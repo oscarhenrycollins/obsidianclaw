@@ -966,6 +966,16 @@ class OpenClawChatView extends ItemView {
       for (const c of content) {
         if (c.type === "text") {
           text += (text ? "\n" : "") + c.text;
+        } else if (c.type === "tool_result") {
+          // Extract text from tool_result content (e.g., TTS MEDIA: paths)
+          const trContent = c.content;
+          if (typeof trContent === "string") {
+            text += (text ? "\n" : "") + trContent;
+          } else if (Array.isArray(trContent)) {
+            for (const tc of trContent) {
+              if (tc?.type === "text" && tc.text) text += (text ? "\n" : "") + tc.text;
+            }
+          }
         } else if (c.type === "image_url" && c.image_url?.url) {
           images.push(c.image_url.url);
         }
