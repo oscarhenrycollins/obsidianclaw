@@ -1403,6 +1403,31 @@ class OpenClawChatView extends ItemView {
     }
   }
 
+  private async playTTSAudio(audioPath: string): Promise<void> {
+    try {
+      // Works in Electron/Obsidian (same machine as gateway)
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("fs") as typeof import("fs");
+      const buffer = fs.readFileSync(audioPath);
+      const ext = audioPath.split(".").pop()?.toLowerCase() || "opus";
+      const mimeMap: Record<string, string> = {
+        opus: "audio/ogg; codecs=opus",
+        mp3: "audio/mpeg",
+        mp4: "audio/mp4",
+        wav: "audio/wav",
+        ogg: "audio/ogg",
+      };
+      const mime = mimeMap[ext] || "audio/ogg; codecs=opus";
+      const blob = new Blob([buffer], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch {
+      // Silently ignore — remote devices don't have local file access
+    }
+  }
+
   private showBanner(text: string): void {
     if (!this.bannerEl) return;
     this.bannerEl.textContent = text;
@@ -1423,12 +1448,17 @@ class OpenClawChatView extends ItemView {
       if (stream === "compaction" || state === "compacting") {
         const cPhase = payload.data?.phase || "";
         if (cPhase === "end") {
-          // Compaction finished — keep banner briefly then hide
           setTimeout(() => this.hideBanner(), 2000);
         } else {
-          // phase=start or unknown — show compacting indicator
           this.showBanner("Compacting context...");
         }
+      }
+      // TTS audio — play locally even when not the initiating device
+      const phasePas = payload.data?.phase || payload.phase || "";
+      const toolNamePas = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
+      if (toolNamePas === "tts" && phasePas === "result") {
+        const audioPath: string | undefined = payload.data?.result?.details?.audioPath;
+        if (audioPath) this.playTTSAudio(audioPath);
       }
       return;
     }
@@ -1482,6 +1512,13 @@ class OpenClawChatView extends ItemView {
       this.deactivateLastToolItem();
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
+
+      // TTS audio playback (local machine only — silently skipped on remote)
+      if (toolName === "tts") {
+        const audioPath: string | undefined = payload.data?.result?.details?.audioPath;
+        if (audioPath) this.playTTSAudio(audioPath);
+      }
+
       this.scrollToBottom();
     } else if (stream === "compaction" || state === "compacting") {
       if (phase === "end") {
