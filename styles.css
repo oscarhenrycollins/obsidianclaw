@@ -910,3 +910,65 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ─── Settings page ──────────────────────────────────────────────── */
+
+.openclaw-settings-wizard {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.openclaw-settings-wizard-desc {
+  margin-bottom: 12px;
+}
+.openclaw-settings-wizard-desc p {
+  margin: 4px 0 0 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+.openclaw-settings-wizard-btn {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 1em;
+}
+.openclaw-settings-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 16px 0;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+.openclaw-settings-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.openclaw-settings-dot.connected {
+  background: var(--color-green);
+}
+.openclaw-settings-dot.disconnected {
+  background: var(--color-red);
+}
+.openclaw-settings-status-url {
+  color: var(--text-faint);
+  font-size: 0.85em;
+}
+.openclaw-settings-advanced-header {
+  cursor: default;
+}
+
+/* ─── Onboarding numbered items ──────────────────────────────────── */
+
+.openclaw-onboard-numbered {
+  margin: 8px 0;
+}
+.openclaw-onboard-numbered-item {
+  margin-bottom: 16px;
+}
+.openclaw-onboard-numbered-item p {
+  margin: 4px 0;
+}

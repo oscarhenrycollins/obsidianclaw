@@ -2374,9 +2374,57 @@ class OpenClawSettingTab extends PluginSettingTab {
 
     containerEl.createEl("h2", { text: "OpenClaw" });
 
+    // ─── Setup Wizard (top, most prominent) ───────────────────────
+    const wizardSection = containerEl.createDiv("openclaw-settings-wizard");
+    const wizardDesc = wizardSection.createDiv("openclaw-settings-wizard-desc");
+    wizardDesc.createEl("strong", { text: "Setup wizard" });
+    wizardDesc.createEl("p", {
+      text: "The easiest way to connect. Walks you through Tailscale, gateway setup, and device pairing step by step.",
+      cls: "setting-item-description",
+    });
+    const wizardBtn = wizardSection.createEl("button", { text: "Run setup wizard", cls: "mod-cta openclaw-settings-wizard-btn" });
+    wizardBtn.addEventListener("click", () => {
+      new OnboardingModal(this.app, this.plugin).open();
+    });
+
+    // ─── Status ──────────────────────────────────────────────────
+    const statusSection = containerEl.createDiv("openclaw-settings-status");
+    const connected = this.plugin.gatewayConnected;
+    const statusDot = statusSection.createSpan({ cls: `openclaw-settings-dot ${connected ? "connected" : "disconnected"}` });
+    statusSection.createSpan({ text: connected ? "Connected" : "Disconnected", cls: "openclaw-settings-status-text" });
+    if (this.plugin.settings.gatewayUrl) {
+      statusSection.createSpan({
+        text: ` — ${this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, "")}`,
+        cls: "openclaw-settings-status-url",
+      });
+    }
+
+    // ─── Session ──────────────────────────────────────────────────
+    containerEl.createEl("h3", { text: "Session" });
+
+    new Setting(containerEl)
+      .setName("Session key")
+      .setDesc("Which agent session to chat in. Use \"main\" for the default agent.")
+      .addText((text) =>
+        text
+          .setPlaceholder("main")
+          .setValue(this.plugin.settings.sessionKey)
+          .onChange(async (value) => {
+            this.plugin.settings.sessionKey = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    // ─── Connection (Advanced) ────────────────────────────────────
+    const advancedHeader = containerEl.createEl("h3", { text: "Connection", cls: "openclaw-settings-advanced-header" });
+    const advancedHint = containerEl.createEl("p", {
+      text: "These are set automatically by the setup wizard. Edit manually only if you know what you're doing.",
+      cls: "setting-item-description",
+    });
+
     new Setting(containerEl)
       .setName("Gateway URL")
-      .setDesc("Tailscale Serve URL (e.g., wss://your-machine.tail1234.ts.net). Also accepts https://, ws://, or http://.")
+      .setDesc("Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)")
       .addText((text) =>
         text
           .setPlaceholder("wss://your-machine.tail1234.ts.net")
@@ -2389,8 +2437,8 @@ class OpenClawSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Auth Token")
-      .setDesc("Gateway auth token (leave empty if no auth)")
+      .setName("Auth token")
+      .setDesc("Gateway auth token")
       .addText((text) => {
         text.inputEl.type = "password";
         return text
@@ -2403,34 +2451,12 @@ class OpenClawSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Session Key")
-      .setDesc("Which session to chat in")
-      .addText((text) =>
-        text
-          .setPlaceholder("main")
-          .setValue(this.plugin.settings.sessionKey)
-          .onChange(async (value) => {
-            this.plugin.settings.sessionKey = value;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
       .setName("Reconnect")
       .setDesc("Re-establish the gateway connection")
       .addButton((btn) =>
         btn.setButtonText("Reconnect").onClick(() => {
           this.plugin.connectGateway();
           new Notice("OpenClaw: Reconnecting...");
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Setup wizard")
-      .setDesc("Walk through connection, pairing, and sync setup. Safe to re-run anytime.")
-      .addButton((btn) =>
-        btn.setButtonText("Run setup wizard").setCta().onClick(() => {
-          new OnboardingModal(this.app, this.plugin).open();
         })
       );
   }
