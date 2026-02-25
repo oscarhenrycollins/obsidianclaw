@@ -1792,45 +1792,32 @@ class OpenClawChatView extends ItemView {
 
       if (!audio) {
         try {
-          // Copy audio file into vault so Obsidian can serve it
+          // Same approach as screenshot attachments: save to openclaw-attachments/
           const fileName = audioPath.split("/").pop() || "voice.mp3";
-          const vaultPath = `openclaw-attachments/voice/${fileName}`;
+          const vaultDir = "openclaw-attachments";
+          const vaultPath = `${vaultDir}/${fileName}`;
 
-          // Ensure directory exists
-          const dir = "openclaw-attachments/voice";
-          if (!(await this.app.vault.adapter.exists(dir))) {
-            await this.app.vault.createFolder(dir);
+          // Ensure openclaw-attachments/ exists (same folder as images)
+          if (!(await this.app.vault.adapter.exists(vaultDir))) {
+            await this.app.vault.createFolder(vaultDir);
           }
 
-          // Read source file and write to vault
-          const nodeFs = require("fs") as typeof import("fs");
-          const fileBuffer = nodeFs.readFileSync(audioPath);
-          await this.app.vault.adapter.writeBinary(vaultPath, fileBuffer);
+          // Only copy if not already in vault
+          if (!(await this.app.vault.adapter.exists(vaultPath))) {
+            const nodeFs = require("fs") as typeof import("fs");
+            const buf = nodeFs.readFileSync(audioPath);
+            // Convert Node Buffer to ArrayBuffer (Obsidian writeBinary expects ArrayBuffer)
+            const arrayBuf = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+            await this.app.vault.adapter.writeBinary(vaultPath, arrayBuf);
+          }
 
-          // Get Obsidian resource URL for the vault file
+          // Use Obsidian's resource path (same as how images are served)
           const resourceUrl = this.app.vault.adapter.getResourcePath(vaultPath);
-
           audio = new Audio(resourceUrl);
           audio.addEventListener("timeupdate", () => {
-            if (audio && audio.duration) {
-              barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
-            }
+            if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
           });
-          audio.addEventListener("ended", () => {
-            playBtn.textContent = "▶ Voice message";
-            barEl.style.width = "0%";
-          });
-          audio.addEventListener("error", () => {
-            // Fallback: try direct file:// URL
-            const fallbackAudio = new Audio("file://" + audioPath);
-            audio = fallbackAudio;
-            fallbackAudio.addEventListener("timeupdate", () => {
-              if (fallbackAudio.duration) barEl.style.width = `${(fallbackAudio.currentTime / fallbackAudio.duration) * 100}%`;
-            });
-            fallbackAudio.addEventListener("ended", () => { playBtn.textContent = "▶ Voice message"; barEl.style.width = "0%"; });
-            playBtn.textContent = "⏸ Playing...";
-            fallbackAudio.play().catch(() => { playBtn.textContent = "⚠ Audio unavailable"; playBtn.disabled = true; });
-          });
+          audio.addEventListener("ended", () => { playBtn.textContent = "▶ Voice message"; barEl.style.width = "0%"; });
         } catch (e) {
           console.error("[ObsidianClaw] Audio load failed:", e);
           playBtn.textContent = "⚠ Audio unavailable";
