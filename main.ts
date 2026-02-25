@@ -1421,7 +1421,14 @@ class OpenClawChatView extends ItemView {
     // Compaction can arrive without an active stream (before user message gets processed)
     if (!this.streamRunId) {
       if (stream === "compaction" || state === "compacting") {
-        this.showBanner("Compacting context...");
+        const cPhase = payload.data?.phase || "";
+        if (cPhase === "end") {
+          // Compaction finished — keep banner briefly then hide
+          setTimeout(() => this.hideBanner(), 2000);
+        } else {
+          // phase=start or unknown — show compacting indicator
+          this.showBanner("Compacting context...");
+        }
       }
       return;
     }
@@ -1477,11 +1484,17 @@ class OpenClawChatView extends ItemView {
       this.typingEl.style.display = "";
       this.scrollToBottom();
     } else if (stream === "compaction" || state === "compacting") {
-      this.currentToolCalls.push("Compacting memory");
-      this.streamItems.push({ type: "tool", label: "Compacting memory" });
-      this.appendToolCall("Compacting memory");
-      this.typingEl.style.display = "none";
-      this.showBanner("Compacting context...");
+      if (phase === "end") {
+        // Compaction finished — keep banner briefly then hide
+        setTimeout(() => this.hideBanner(), 2000);
+      } else {
+        // phase=start or unknown — show compacting indicator
+        this.currentToolCalls.push("Compacting memory");
+        this.streamItems.push({ type: "tool", label: "Compacting memory" });
+        this.appendToolCall("Compacting memory");
+        this.typingEl.style.display = "none";
+        this.showBanner("Compacting context...");
+      }
     }
   }
 
@@ -1493,6 +1506,7 @@ class OpenClawChatView extends ItemView {
 
     // No active stream (passive device): still refresh history and inject any locally collected stream items
     if (!this.streamRunId && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
+      this.hideBanner();
       const items = [...this.streamItems];
       this.streamItems = [];
       this.currentToolCalls = [];
