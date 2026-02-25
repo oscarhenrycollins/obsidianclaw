@@ -959,7 +959,8 @@ class OpenClawChatView extends ItemView {
     this.abortBtn.style.display = "none";
     const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
     this.sendBtn = sendWrapper.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
-    this.sendBtn.innerHTML = this.micSvg;
+    this.sendBtn.innerHTML = this.sendSvg;
+    this.sendBtn.style.opacity = "0.3";
     this.reconnectBtn = sendWrapper.createEl("button", { cls: "openclaw-reconnect-btn", attr: { "aria-label": "Reconnect" } });
     this.reconnectBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
     this.reconnectBtn.style.display = "none";
@@ -1010,13 +1011,10 @@ class OpenClawChatView extends ItemView {
       }
     });
     this.sendBtn.addEventListener("click", () => {
-      if (this.recording) {
-        this.stopRecording();
-      } else if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
+      if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
         this.sendMessage();
-      } else {
-        this.startRecording();
       }
+      // Voice recording disabled — base64 in message text bloats context
     });
     this.abortBtn.addEventListener("click", () => this.abortMessage());
 
@@ -1156,18 +1154,14 @@ class OpenClawChatView extends ItemView {
   }
 
   private updateSendButton(): void {
-    if (this.recording) {
-      this.sendBtn.innerHTML = this.stopSvg;
-      this.sendBtn.setAttribute("aria-label", "Stop recording");
-      this.sendBtn.classList.add("openclaw-recording");
-    } else if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
+    if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
       this.sendBtn.innerHTML = this.sendSvg;
       this.sendBtn.setAttribute("aria-label", "Send");
-      this.sendBtn.classList.remove("openclaw-recording");
+      this.sendBtn.style.opacity = "1";
     } else {
-      this.sendBtn.innerHTML = this.micSvg;
-      this.sendBtn.setAttribute("aria-label", "Record voice");
-      this.sendBtn.classList.remove("openclaw-recording");
+      this.sendBtn.innerHTML = this.sendSvg;
+      this.sendBtn.setAttribute("aria-label", "Send");
+      this.sendBtn.style.opacity = "0.3";
     }
   }
 
@@ -2438,12 +2432,19 @@ class SessionPickerModal extends Modal {
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
-            this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
+            const result = await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
+            // Re-fetch sessions from gateway to confirm deletion
+            try {
+              const refreshed = await this.plugin.gateway?.request("sessions.list", {});
+              this.sessions = refreshed?.sessions || [];
+            } catch {
+              // Fallback to local filter
+              this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
+            }
             this.render();
             new Notice(`Deleted: ${name}`);
-          } catch (err) {
-            new Notice(`Delete failed: ${err}`);
+          } catch (err: any) {
+            new Notice(`Delete failed: ${err?.message || err}`);
           }
         });
       }
@@ -2593,29 +2594,27 @@ class ModelPickerModal extends Modal {
       if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
       left.createSpan({ text: m.name || m.id });
 
-      if (!isCurrent) {
-        row.addEventListener("click", async () => {
-          if (!this.plugin.gateway?.connected) return;
-          // Show selecting state
-          row.addClass("openclaw-picker-selecting");
-          row.textContent = "Switching...";
-          try {
-            await this.plugin.gateway.request("chat.send", {
-              sessionKey: this.plugin.settings.sessionKey,
-              message: `/model ${fullId}`,
-              deliver: false,
-              idempotencyKey: "model-" + Date.now(),
-            });
-            this.chatView.currentModel = fullId;
-            this.chatView.updateModelPill();
-            new Notice(`Model: ${m.name || m.id}`);
-            this.close();
-          } catch (e) {
-            new Notice(`Failed: ${e}`);
-            this.renderModels(provider);
-          }
-        });
-      }
+      // Always clickable - even the current model (user might want to re-select it)
+      row.addEventListener("click", async () => {
+        if (!this.plugin.gateway?.connected) return;
+        row.addClass("openclaw-picker-selecting");
+        row.textContent = "Switching...";
+        try {
+          await this.plugin.gateway.request("chat.send", {
+            sessionKey: this.plugin.settings.sessionKey,
+            message: `/model ${fullId}`,
+            deliver: false,
+            idempotencyKey: "model-" + Date.now(),
+          });
+          this.chatView.currentModel = fullId;
+          this.chatView.updateModelPill();
+          new Notice(`Model: ${m.name || m.id}`);
+          this.close();
+        } catch (e) {
+          new Notice(`Failed: ${e}`);
+          this.renderModels(provider);
+        }
+      });
     }
   }
 }

@@ -1121,10 +1121,10 @@
 }
 .openclaw-picker-row.active {
   background: var(--background-secondary);
-  cursor: default;
+  cursor: pointer;
 }
 .openclaw-picker-row.active:hover {
-  background: var(--background-secondary);
+  background: var(--background-modifier-hover);
 }
 .openclaw-picker-row-left {
   display: flex;
