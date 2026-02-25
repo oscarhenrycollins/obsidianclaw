@@ -383,6 +383,7 @@ interface ChatMessage {
   images: string[]; // data URIs or URLs
   timestamp: number;
   contentBlocks?: any[]; // raw content array from history (preserves tool_use interleaving)
+  audioPaths?: string[]; // local audio file paths from TTS tool results
 }
 
 // ─── Onboarding Modal ────────────────────────────────────────────────
@@ -718,6 +719,7 @@ class OpenClawChatView extends ItemView {
   private currentToolCalls: string[] = [];
   /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
   private streamItems: StreamItem[] = [];
+  private pendingAudioPaths: string[] = [];
   private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
   private streamEl: HTMLElement | null = null;
   private contextMeterEl!: HTMLElement;
@@ -924,6 +926,28 @@ class OpenClawChatView extends ItemView {
             };
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
+
+        // Post-process: extract audio from tool_result user messages → attach to preceding assistant
+        for (let i = 0; i < this.messages.length; i++) {
+          const m = this.messages[i];
+          if (m.role === "user") {
+            const audio = this.extractAudioPaths(m.text);
+            if (audio.length > 0) {
+              // Find preceding assistant message
+              for (let j = i - 1; j >= 0; j--) {
+                if (this.messages[j].role === "assistant") {
+                  this.messages[j].audioPaths = [...(this.messages[j].audioPaths || []), ...audio];
+                  break;
+                }
+              }
+              // Clean the user message text (remove MEDIA: and audio_as_voice lines)
+              m.text = m.text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
+            }
+          }
+        }
+        // Re-filter: remove now-empty messages
+        this.messages = this.messages.filter(m => m.text.trim() || m.images.length > 0 || (m.audioPaths && m.audioPaths.length > 0));
+
         await this.renderMessages();
         this.updateContextMeter();
       }
@@ -1453,12 +1477,14 @@ class OpenClawChatView extends ItemView {
           this.showBanner("Compacting context...");
         }
       }
-      // TTS audio — play locally even when not the initiating device
+      // TTS audio — collect audio paths even on passive device
       const phasePas = payload.data?.phase || payload.phase || "";
       const toolNamePas = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
       if (toolNamePas === "tts" && phasePas === "result") {
-        const audioPath: string | undefined = payload.data?.result?.details?.audioPath;
-        if (audioPath) this.playTTSAudio(audioPath);
+        const audioPath: string | undefined =
+          payload.data?.result?.details?.audioPath ||
+          this.extractMediaPathFromResult(payload.data?.result);
+        if (audioPath) this.pendingAudioPaths.push(audioPath);
       }
       return;
     }
@@ -1513,10 +1539,12 @@ class OpenClawChatView extends ItemView {
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
 
-      // TTS audio playback (local machine only — silently skipped on remote)
+      // TTS: extract audio path from tool result and store for rendering
       if (toolName === "tts") {
-        const audioPath: string | undefined = payload.data?.result?.details?.audioPath;
-        if (audioPath) this.playTTSAudio(audioPath);
+        const audioPath: string | undefined =
+          payload.data?.result?.details?.audioPath ||
+          this.extractMediaPathFromResult(payload.data?.result);
+        if (audioPath) this.pendingAudioPaths.push(audioPath);
       }
 
       this.scrollToBottom();
@@ -1578,10 +1606,18 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
+      const collectedAudio = [...this.pendingAudioPaths];
       this.finishStream();
 
       // Reload history — contentBlocks from gateway have proper tool interleaving
       this.loadHistory().then(async () => {
+        // Attach collected TTS audio paths to the last assistant message
+        if (collectedAudio.length > 0) {
+          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
+          if (lastAssistant) {
+            lastAssistant.audioPaths = [...(lastAssistant.audioPaths || []), ...collectedAudio];
+          }
+        }
         await this.renderMessages();
         this.updateContextMeter();
       });
@@ -1613,6 +1649,7 @@ class OpenClawChatView extends ItemView {
     this.currentToolCalls = [];
     this.streamItems = [];
     this.streamSplitPoints = [];
+    this.pendingAudioPaths = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
@@ -1675,6 +1712,24 @@ class OpenClawChatView extends ItemView {
     text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
+  }
+
+  /** Extract MEDIA: audio path from a tool result object */
+  private extractMediaPathFromResult(result: any): string | undefined {
+    if (!result) return undefined;
+    const content = Array.isArray(result.content) ? result.content : [];
+    for (const item of content) {
+      if (item?.type === "text" && typeof item.text === "string") {
+        const match = item.text.match(/^MEDIA:(\/[^\n]+\.(?:opus|mp3|mp4|wav|ogg|m4a))$/m);
+        if (match) return match[1];
+      }
+    }
+    // Also check if result is just a string
+    if (typeof result === "string") {
+      const match = result.match(/^MEDIA:(\/[^\n]+\.(?:opus|mp3|mp4|wav|ogg|m4a))$/m);
+      if (match) return match[1];
+    }
+    return undefined;
   }
 
   /** Extract audio file paths from message text (MEDIA:/path/to/audio.ext) */
@@ -1829,8 +1884,9 @@ class OpenClawChatView extends ItemView {
           });
         }
       }
-      // Extract audio paths before cleaning (MEDIA:/path lines)
-      const audioPaths = msg.text ? this.extractAudioPaths(msg.text) : [];
+      // Combine audio paths from message metadata + text content
+      const textAudio = msg.text ? this.extractAudioPaths(msg.text) : [];
+      const allAudio = [...(msg.audioPaths || []), ...textAudio];
 
       // Render text
       if (msg.text) {
@@ -1849,7 +1905,7 @@ class OpenClawChatView extends ItemView {
       }
 
       // Render audio players for voice messages
-      for (const ap of audioPaths) {
+      for (const ap of allAudio) {
         this.renderAudioPlayer(bubble, ap);
       }
     }
