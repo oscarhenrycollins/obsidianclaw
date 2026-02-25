@@ -1676,15 +1676,15 @@ class OpenClawChatView extends ItemView {
     // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
     text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
     text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
-    text = text.replace(/^VOICE:[^\s\n]+\.txt$/gm, "").trim();
+    text = text.replace(/^VOICE:[^\s\n]+$/gm, "").trim();
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
   }
 
-  /** Extract VOICE:filename references from message text */
+  /** Extract VOICE:path references from message text */
   private extractVoiceRefs(text: string): string[] {
     const refs: string[] = [];
-    const re = /^VOICE:([^\s\n]+\.txt)$/gm;
+    const re = /^VOICE:([^\s\n]+\.(?:mp3|opus|ogg|wav|m4a|mp4))$/gm;
     let match: RegExpExecArray | null;
     while ((match = re.exec(text)) !== null) {
       refs.push(match[1].trim());
@@ -1692,33 +1692,15 @@ class OpenClawChatView extends ItemView {
     return refs;
   }
 
-  /** Fetch a voice file from workspace via gateway WebSocket, decode base64 → Blob URL */
-  private async fetchVoiceFromGateway(filename: string): Promise<string | null> {
-    if (!this.plugin.gateway?.connected) return null;
-    try {
-      const result = await this.plugin.gateway.request("agents.files.get", { agentId: "main", name: filename });
-      const b64Content = result?.file?.content;
-      if (!b64Content || result?.file?.missing) return null;
-      // Decode base64 to binary
-      const raw = atob(b64Content.trim());
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      // Detect audio type from original filename
-      // Format: voice-{timestamp}.{ext}.txt → extract {ext}
-      const origExt = filename.replace(/\.txt$/, "").split(".").pop()?.toLowerCase() || "mp3";
-      const mimeMap: Record<string, string> = {
-        opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
-        mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
-      };
-      const blob = new Blob([bytes], { type: mimeMap[origExt] || "audio/mpeg" });
-      return URL.createObjectURL(blob);
-    } catch (e) {
-      console.error("[ObsidianClaw] Failed to fetch voice from gateway:", e);
-      return null;
-    }
+  /** Build HTTP URL for a voice file served by the gateway */
+  private buildVoiceUrl(voicePath: string): string {
+    // Gateway URL is ws:// or wss:// — convert to http:// or https://
+    const gwUrl = this.plugin.settings.gatewayUrl || "";
+    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, "http$1://");
+    return `${httpUrl}/${voicePath}`;
   }
 
-  /** Render an inline audio player that fetches audio via gateway WebSocket */
+  /** Render an inline audio player that fetches audio via gateway HTTP */
   private renderAudioPlayer(container: HTMLElement, voiceRef: string): void {
     const playerEl = container.createDiv("openclaw-audio-player");
     const playBtn = playerEl.createEl("button", { cls: "openclaw-audio-play-btn", text: "▶ Voice message" });
@@ -1726,7 +1708,6 @@ class OpenClawChatView extends ItemView {
     const barEl = progressEl.createDiv("openclaw-audio-bar");
 
     let audio: HTMLAudioElement | null = null;
-    let blobUrl: string | null = null;
 
     playBtn.addEventListener("click", async () => {
       if (audio && !audio.paused) {
@@ -1738,10 +1719,17 @@ class OpenClawChatView extends ItemView {
       if (!audio) {
         playBtn.textContent = "⏳ Loading...";
         try {
-          blobUrl = await this.fetchVoiceFromGateway(voiceRef);
-          if (!blobUrl) throw new Error("Could not fetch voice data");
+          const url = this.buildVoiceUrl(voiceRef);
+          console.log("[ObsidianClaw] Loading audio from:", url);
+          audio = new Audio(url);
 
-          audio = new Audio(blobUrl);
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("timeout")), 10000);
+            audio!.addEventListener("canplaythrough", () => { clearTimeout(timer); resolve(); }, { once: true });
+            audio!.addEventListener("error", () => { clearTimeout(timer); reject(new Error("load error")); }, { once: true });
+            audio!.load();
+          });
+
           audio.addEventListener("timeupdate", () => {
             if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
           });
