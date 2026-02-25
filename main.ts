@@ -1792,32 +1792,31 @@ class OpenClawChatView extends ItemView {
 
       if (!audio) {
         try {
-          // Read file via Node fs → Blob URL (Electron only)
-          console.log("[ObsidianClaw] Attempting to load audio:", audioPath);
-          let nodeFs: typeof import("fs") | null = null;
-          try { nodeFs = require("fs") as typeof import("fs"); } catch (e1) {
-            console.log("[ObsidianClaw] require('fs') failed, trying window.require");
-            try { nodeFs = (window as any).require("fs"); } catch (e2) {
-              console.error("[ObsidianClaw] Both require('fs') methods failed:", e1, e2);
+          // Resolve vault-relative path (openclaw-attachments/...) via Obsidian's vault adapter
+          let vaultPath = audioPath;
+          if (audioPath.startsWith("/")) {
+            // Absolute path: check if it's within the vault
+            const vaultBase = (this.app.vault.adapter as any).basePath || "";
+            if (vaultBase && audioPath.startsWith(vaultBase)) {
+              vaultPath = audioPath.substring(vaultBase.length + 1);
+            } else if (audioPath.includes("openclaw-attachments/")) {
+              vaultPath = "openclaw-attachments/" + audioPath.split("openclaw-attachments/")[1];
             }
           }
-          if (!nodeFs) throw new Error("fs module not available");
 
-          console.log("[ObsidianClaw] fs module loaded, checking file exists...");
-          if (!nodeFs.existsSync(audioPath)) throw new Error(`File not found: ${audioPath}`);
+          console.log("[ObsidianClaw] Loading audio from vault:", vaultPath);
 
-          console.log("[ObsidianClaw] File exists, reading...");
-          const buf = nodeFs.readFileSync(audioPath);
-          console.log("[ObsidianClaw] Read", buf.length, "bytes");
+          // Read binary from vault (works on all devices via Obsidian Sync)
+          const arrayBuf = await this.app.vault.adapter.readBinary(vaultPath);
+          console.log("[ObsidianClaw] Read", arrayBuf.byteLength, "bytes from vault");
 
-          const ext = audioPath.split(".").pop()?.toLowerCase() || "mp3";
+          const ext = vaultPath.split(".").pop()?.toLowerCase() || "mp3";
           const mimeMap: Record<string, string> = {
             opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
             mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
           };
-          const blob = new Blob([buf], { type: mimeMap[ext] || "audio/mpeg" });
+          const blob = new Blob([arrayBuf], { type: mimeMap[ext] || "audio/mpeg" });
           const blobUrl = URL.createObjectURL(blob);
-          console.log("[ObsidianClaw] Created blob URL:", blobUrl, "type:", mimeMap[ext] || "audio/mpeg");
 
           audio = new Audio(blobUrl);
           audio.addEventListener("timeupdate", () => {
