@@ -1792,37 +1792,42 @@ class OpenClawChatView extends ItemView {
 
       if (!audio) {
         try {
-          // Try multiple approaches to load the audio file
-          const tryUrls = [
-            `app://local${audioPath}`,              // Obsidian's local file protocol
-            `file://${audioPath}`,                   // Direct file:// URL (Electron)
-          ];
-
-          let loaded = false;
-          for (const url of tryUrls) {
-            try {
-              const testAudio = new Audio(url);
-              await new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error("timeout")), 3000);
-                testAudio.addEventListener("canplaythrough", () => { clearTimeout(timer); resolve(); }, { once: true });
-                testAudio.addEventListener("error", () => { clearTimeout(timer); reject(new Error("load error")); }, { once: true });
-                testAudio.load();
-              });
-              audio = testAudio;
-              loaded = true;
-              console.log("[ObsidianClaw] Audio loaded via:", url);
-              break;
-            } catch {
-              console.log("[ObsidianClaw] Audio failed via:", url);
+          // Read file via Node fs → Blob URL (Electron only)
+          console.log("[ObsidianClaw] Attempting to load audio:", audioPath);
+          let nodeFs: typeof import("fs") | null = null;
+          try { nodeFs = require("fs") as typeof import("fs"); } catch (e1) {
+            console.log("[ObsidianClaw] require('fs') failed, trying window.require");
+            try { nodeFs = (window as any).require("fs"); } catch (e2) {
+              console.error("[ObsidianClaw] Both require('fs') methods failed:", e1, e2);
             }
           }
+          if (!nodeFs) throw new Error("fs module not available");
 
-          if (!loaded) throw new Error("All audio URL schemes failed");
+          console.log("[ObsidianClaw] fs module loaded, checking file exists...");
+          if (!nodeFs.existsSync(audioPath)) throw new Error(`File not found: ${audioPath}`);
 
+          console.log("[ObsidianClaw] File exists, reading...");
+          const buf = nodeFs.readFileSync(audioPath);
+          console.log("[ObsidianClaw] Read", buf.length, "bytes");
+
+          const ext = audioPath.split(".").pop()?.toLowerCase() || "mp3";
+          const mimeMap: Record<string, string> = {
+            opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
+            mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
+          };
+          const blob = new Blob([buf], { type: mimeMap[ext] || "audio/mpeg" });
+          const blobUrl = URL.createObjectURL(blob);
+          console.log("[ObsidianClaw] Created blob URL:", blobUrl, "type:", mimeMap[ext] || "audio/mpeg");
+
+          audio = new Audio(blobUrl);
           audio.addEventListener("timeupdate", () => {
             if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
           });
-          audio.addEventListener("ended", () => { playBtn.textContent = "▶ Voice message"; barEl.style.width = "0%"; });
+          audio.addEventListener("ended", () => {
+            playBtn.textContent = "▶ Voice message";
+            barEl.style.width = "0%";
+            URL.revokeObjectURL(blobUrl);
+          });
         } catch (e) {
           console.error("[ObsidianClaw] Audio load failed:", e);
           playBtn.textContent = "⚠ Audio unavailable";
