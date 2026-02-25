@@ -2461,13 +2461,26 @@ class SessionPickerModal extends Modal {
     newRow.createSpan({ text: "+ New chat" });
     newRow.addEventListener("click", () => {
       this.close();
-      new ConfirmModal(this.app, {
-        title: "Start a new chat?",
-        message: "Archives the current conversation and starts a new one. Your assistant keeps all its memories.",
-        confirmText: "New chat",
-        onConfirm: () => {
-          this.chatView.newSession();
+      new TextInputModal(this.app, {
+        title: "New chat",
+        placeholder: "Chat name (e.g. 'Work', 'Personal', 'Research')",
+        confirmText: "Create",
+        onConfirm: async (name: string) => {
+          if (!name.trim()) {
+            new Notice("Chat name cannot be empty");
+            return;
+          }
+          // Switch to the new session key
+          this.plugin.settings.sessionKey = name.trim();
+          await this.plugin.saveSettings();
           this.chatView.updateSessionPill();
+          // Clear local messages and reconnect
+          this.chatView.messages = [];
+          if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+          await this.plugin.saveSettings();
+          this.chatView.messagesEl.empty();
+          await this.plugin.connectGateway();
+          new Notice(`New chat: ${name.trim()}`);
         },
       }).open();
     });
@@ -2496,7 +2509,14 @@ class ModelPickerModal extends Modal {
       models = result?.models || [];
     } catch { models = []; }
 
-    const currentModel = this.chatView.currentModel || "";
+    // Normalize currentModel to always be provider/id format
+    let currentModel = this.chatView.currentModel || "";
+    if (currentModel && !currentModel.includes("/")) {
+      // If no provider prefix, find the first matching model and use its fullId
+      const match = models.find((m: any) => m.id === currentModel);
+      if (match) currentModel = `${match.provider}/${match.id}`;
+    }
+
     const { contentEl } = this;
     contentEl.empty();
 
@@ -2504,7 +2524,8 @@ class ModelPickerModal extends Modal {
 
     for (const m of models) {
       const fullId = `${m.provider}/${m.id}`;
-      const isCurrent = fullId === currentModel || m.id === currentModel;
+      // ONLY match on fullId (provider/id) to avoid duplicates
+      const isCurrent = fullId === currentModel;
       const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
 
       const left = row.createDiv("openclaw-picker-row-left");
@@ -2566,6 +2587,52 @@ class ConfirmModal extends Modal {
       this.close();
       this.config.onConfirm();
     });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+// ─── Text Input Modal ────────────────────────────────────────────────
+
+class TextInputModal extends Modal {
+  private config: { title: string; placeholder: string; confirmText: string; onConfirm: (value: string) => void };
+  private inputEl!: HTMLInputElement;
+
+  constructor(app: App, config: { title: string; placeholder: string; confirmText: string; onConfirm: (value: string) => void }) {
+    super(app);
+    this.config = config;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("openclaw-confirm-modal");
+    contentEl.createEl("h3", { text: this.config.title, cls: "openclaw-confirm-title" });
+    this.inputEl = contentEl.createEl("input", {
+      type: "text",
+      placeholder: this.config.placeholder,
+      cls: "openclaw-text-input",
+    });
+    this.inputEl.focus();
+    this.inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.submit();
+      }
+    });
+    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "openclaw-confirm-cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+    const confirmBtn = btnRow.createEl("button", { text: this.config.confirmText, cls: "openclaw-confirm-ok" });
+    confirmBtn.addEventListener("click", () => this.submit());
+  }
+
+  private submit(): void {
+    const value = this.inputEl.value.trim();
+    if (!value) return;
+    this.close();
+    this.config.onConfirm(value);
   }
 
   onClose(): void {
