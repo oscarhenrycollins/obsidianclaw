@@ -1792,28 +1792,33 @@ class OpenClawChatView extends ItemView {
 
       if (!audio) {
         try {
-          // Same approach as screenshot attachments: save to openclaw-attachments/
-          const fileName = audioPath.split("/").pop() || "voice.mp3";
-          const vaultDir = "openclaw-attachments";
-          const vaultPath = `${vaultDir}/${fileName}`;
+          // Try multiple approaches to load the audio file
+          const tryUrls = [
+            `app://local${audioPath}`,              // Obsidian's local file protocol
+            `file://${audioPath}`,                   // Direct file:// URL (Electron)
+          ];
 
-          // Ensure openclaw-attachments/ exists (same folder as images)
-          if (!(await this.app.vault.adapter.exists(vaultDir))) {
-            await this.app.vault.createFolder(vaultDir);
+          let loaded = false;
+          for (const url of tryUrls) {
+            try {
+              const testAudio = new Audio(url);
+              await new Promise<void>((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("timeout")), 3000);
+                testAudio.addEventListener("canplaythrough", () => { clearTimeout(timer); resolve(); }, { once: true });
+                testAudio.addEventListener("error", () => { clearTimeout(timer); reject(new Error("load error")); }, { once: true });
+                testAudio.load();
+              });
+              audio = testAudio;
+              loaded = true;
+              console.log("[ObsidianClaw] Audio loaded via:", url);
+              break;
+            } catch {
+              console.log("[ObsidianClaw] Audio failed via:", url);
+            }
           }
 
-          // Only copy if not already in vault
-          if (!(await this.app.vault.adapter.exists(vaultPath))) {
-            const nodeFs = require("fs") as typeof import("fs");
-            const buf = nodeFs.readFileSync(audioPath);
-            // Convert Node Buffer to ArrayBuffer (Obsidian writeBinary expects ArrayBuffer)
-            const arrayBuf = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-            await this.app.vault.adapter.writeBinary(vaultPath, arrayBuf);
-          }
+          if (!loaded) throw new Error("All audio URL schemes failed");
 
-          // Use Obsidian's resource path (same as how images are served)
-          const resourceUrl = this.app.vault.adapter.getResourcePath(vaultPath);
-          audio = new Audio(resourceUrl);
           audio.addEventListener("timeupdate", () => {
             if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
           });
