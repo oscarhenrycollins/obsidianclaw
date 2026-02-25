@@ -424,7 +424,7 @@ class OnboardingModal extends Modal {
     this.statusEl = null;
 
     // Step indicator
-    const steps = ["Prerequisites", "Connect", "Pair Device", "Done"];
+    const steps = ["Install", "Network", "Gateway", "Connect", "Pair", "Done"];
     const indicator = contentEl.createDiv("openclaw-onboard-steps");
     steps.forEach((label, i) => {
       const dot = indicator.createSpan("openclaw-step-dot" + (i === this.step ? " active" : i < this.step ? " done" : ""));
@@ -432,44 +432,135 @@ class OnboardingModal extends Modal {
       if (i < steps.length - 1) indicator.createSpan("openclaw-step-line" + (i < this.step ? " done" : ""));
     });
 
-    if (this.step === 0) this.renderPrereqs(contentEl);
-    else if (this.step === 1) this.renderConnect(contentEl);
-    else if (this.step === 2) this.renderPairing(contentEl);
-    else if (this.step === 3) this.renderDone(contentEl);
+    if (this.step === 0) this.renderInstall(contentEl);
+    else if (this.step === 1) this.renderNetwork(contentEl);
+    else if (this.step === 2) this.renderGateway(contentEl);
+    else if (this.step === 3) this.renderConnect(contentEl);
+    else if (this.step === 4) this.renderPairing(contentEl);
+    else if (this.step === 5) this.renderDone(contentEl);
   }
 
-  // ─── Step 0: Prerequisites ───────────────────────────────────────
+  // ─── Step 0: Install ─────────────────────────────────────────────
 
-  private renderPrereqs(el: HTMLElement): void {
+  private renderInstall(el: HTMLElement): void {
     el.createEl("h2", { text: "Welcome to OpenClaw" });
     el.createEl("p", {
       text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace — it reads your notes, creates new ones, and works alongside you.",
       cls: "openclaw-onboard-desc",
     });
 
-    el.createEl("h3", { text: "You'll need" });
-    const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
-    list.createEl("li").innerHTML = "<strong>OpenClaw running</strong> — on a Mac, PC, or VPS (<a href='https://botsetupguide.com'>setup guide</a>)";
-    list.createEl("li").innerHTML = "<strong>Tailscale installed</strong> — on both the gateway machine and this device (<a href='https://tailscale.com/download'>tailscale.com</a>)";
-    list.createEl("li").innerHTML = "<strong>Tailscale Serve enabled</strong> — so the gateway is reachable securely over your tailnet";
-    list.createEl("li").innerHTML = "<strong>Auth token</strong> — from your gateway machine";
-
+    el.createEl("h3", { text: "Before we start" });
     el.createEl("p", {
-      text: "Tailscale creates a private encrypted network between your devices. Tailscale Serve adds HTTPS automatically — no ports to open, no VPN to configure.",
-      cls: "openclaw-onboard-hint",
+      text: "You need OpenClaw running on a computer that stays on (a Mac, PC, or VPS). This is your \"gateway\" — the brain that runs your AI agent.",
+      cls: "openclaw-onboard-desc",
     });
+
+    const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
+    const li = list.createEl("li");
+    li.innerHTML = "Don't have OpenClaw yet? Follow the <a href='https://botsetupguide.com'>setup guide</a> first, then come back here.";
+    list.createEl("li", { text: "Already have OpenClaw running? Click next." });
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const nextBtn = btnRow.createEl("button", { text: "I'm ready →", cls: "mod-cta" });
+    const nextBtn = btnRow.createEl("button", { text: "I have OpenClaw running →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 1; this.renderStep(); });
   }
 
-  // ─── Step 1: Connect ─────────────────────────────────────────────
+  // ─── Step 1: Network (Tailscale) ─────────────────────────────────
+
+  private renderNetwork(el: HTMLElement): void {
+    el.createEl("h2", { text: "Set up your private network" });
+    el.createEl("p", {
+      text: "Tailscale creates an encrypted private network between your devices. It's how this device talks to your gateway securely — no ports to open, no VPN to configure.",
+      cls: "openclaw-onboard-desc",
+    });
+
+    el.createEl("h3", { text: "Install Tailscale on both devices" });
+
+    const steps = el.createEl("ol", { cls: "openclaw-onboard-list" });
+    const s1 = steps.createEl("li");
+    s1.innerHTML = "Install on your <strong>gateway machine</strong> (where OpenClaw runs): <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    const s2 = steps.createEl("li");
+    s2.innerHTML = "Install on <strong>this device</strong> (where you're reading this): <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    steps.createEl("li", { text: "Sign in to the same Tailscale account on both devices." });
+
+    el.createEl("p", {
+      text: "Both devices will appear on your private tailnet. You can verify by running this on your gateway machine:",
+      cls: "openclaw-onboard-hint",
+    });
+    this.makeCopyBox(el, "tailscale status");
+
+    const checkInfo = el.createDiv("openclaw-onboard-info");
+    checkInfo.createEl("span", { text: "You should see both devices listed. If this device doesn't appear, make sure Tailscale is connected (check the system tray / menu bar icon)." });
+
+    this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "Both devices are on Tailscale →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => { this.step = 2; this.renderStep(); });
+  }
+
+  // ─── Step 2: Gateway (Tailscale Serve) ────────────────────────────
+
+  private renderGateway(el: HTMLElement): void {
+    el.createEl("h2", { text: "Expose your gateway securely" });
+    el.createEl("p", {
+      text: "Tailscale Serve makes your gateway reachable from all your Tailscale devices with automatic HTTPS. Run these commands on your gateway machine (in Terminal):",
+      cls: "openclaw-onboard-desc",
+    });
+
+    const steps = el.createDiv("openclaw-onboard-numbered");
+
+    // Step 1: Enable Tailscale Serve
+    const s1 = steps.createDiv("openclaw-onboard-numbered-item");
+    s1.createEl("strong", { text: "1. Start Tailscale Serve" });
+    s1.createEl("p", { text: "This tells Tailscale to securely proxy traffic to your gateway:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(s1, "tailscale serve --bg http://127.0.0.1:18789");
+
+    // Step 2: Verify it's working
+    const s2 = steps.createDiv("openclaw-onboard-numbered-item");
+    s2.createEl("strong", { text: "2. Verify it's running" });
+    s2.createEl("p", { text: "You should see your gateway URL in the output:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(s2, "tailscale serve status");
+
+    // Step 3: Note the URL
+    const s3 = steps.createDiv("openclaw-onboard-numbered-item");
+    s3.createEl("strong", { text: "3. Copy your gateway URL" });
+    const s3hint = s3.createEl("p", { cls: "openclaw-onboard-hint" });
+    s3hint.innerHTML = "The output will show something like:<br><code>https://your-machine.tail1234.ts.net</code><br>Copy that URL — you'll paste it in the next step.";
+
+    // Step 4: Get the auth token
+    const s4 = steps.createDiv("openclaw-onboard-numbered-item");
+    s4.createEl("strong", { text: "4. Copy your auth token" });
+    s4.createEl("p", { text: "Run this to find your gateway auth token:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(s4, "cat ~/.openclaw/openclaw.json | grep token");
+    const s4hint = s4.createEl("p", { cls: "openclaw-onboard-hint" });
+    s4hint.innerHTML = "Copy the token value (the long string after <code>\"token\":</code>).";
+
+    // Troubleshooting
+    const trouble = el.createDiv("openclaw-onboard-info");
+    trouble.createEl("strong", { text: "💡 Not working? " });
+    trouble.createEl("span", { text: "Run this first to fix common issues:" });
+    this.makeCopyBox(trouble, "openclaw doctor --fix && openclaw gateway restart");
+
+    this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "I have the URL and token →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
+  }
+
+  // ─── Step 3: Connect ─────────────────────────────────────────────
 
   private renderConnect(el: HTMLElement): void {
     el.createEl("h2", { text: "Connect to your gateway" });
+    el.createEl("p", {
+      text: "Paste the URL and token from the previous step.",
+      cls: "openclaw-onboard-desc",
+    });
 
     // URL input
     const urlGroup = el.createDiv("openclaw-onboard-field");
@@ -477,12 +568,11 @@ class OnboardingModal extends Modal {
     const urlInput = urlGroup.createEl("input", {
       type: "text",
       value: this.plugin.settings.gatewayUrl || "",
-      placeholder: "wss://your-machine.tail1234.ts.net",
+      placeholder: "https://your-machine.tail1234.ts.net",
       cls: "openclaw-onboard-input",
     });
     const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.appendText("Your Tailscale Serve URL. Run this on the gateway machine to find it:");
-    this.makeCopyBox(urlGroup, "tailscale serve status");
+    urlHint.innerHTML = "The URL from <code>tailscale serve status</code>. You can paste <code>https://</code> or <code>wss://</code> — both work.";
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
@@ -493,38 +583,38 @@ class OnboardingModal extends Modal {
       placeholder: "Paste your gateway auth token",
       cls: "openclaw-onboard-input",
     });
-    const tokenHint = tokenGroup.createDiv("openclaw-onboard-hint");
-    tokenHint.appendText("Find it by running this on the gateway machine:");
-    this.makeCopyBox(tokenGroup, "cat ~/.openclaw/openclaw.json | grep token");
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     // Troubleshooting (hidden until failure)
     const troubleshoot = el.createDiv("openclaw-onboard-troubleshoot");
     troubleshoot.style.display = "none";
-    troubleshoot.createEl("p", { text: "Not connecting? Run these on your gateway machine:", cls: "openclaw-onboard-hint" });
+    troubleshoot.createEl("h3", { text: "Troubleshooting" });
+
+    const checks = troubleshoot.createEl("ol", { cls: "openclaw-onboard-list" });
+    checks.createEl("li").innerHTML = "Is Tailscale connected on <strong>this device</strong>? Check the Tailscale icon in your system tray / menu bar.";
+    checks.createEl("li").innerHTML = "Is the gateway running? On the gateway machine, run:";
     this.makeCopyBox(troubleshoot, "openclaw doctor --fix && openclaw gateway restart");
-    troubleshoot.createEl("p", { text: "Verify Tailscale Serve is active:", cls: "openclaw-onboard-hint" });
+    checks.createEl("li").innerHTML = "Is Tailscale Serve active? On the gateway machine, run:";
     this.makeCopyBox(troubleshoot, "tailscale serve status");
-    troubleshoot.createEl("p", { text: "If Tailscale Serve is not set up yet:", cls: "openclaw-onboard-hint" });
+    const tsHint = troubleshoot.createDiv("openclaw-onboard-hint");
+    tsHint.innerHTML = "If Tailscale Serve shows nothing, set it up:";
     this.makeCopyBox(troubleshoot, "tailscale serve --bg http://127.0.0.1:18789");
-    const troubleshootHint = troubleshoot.createDiv("openclaw-onboard-hint");
-    troubleshootHint.innerHTML = "Make sure Tailscale is running on <strong>both</strong> this device and the gateway machine.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
 
     const testBtn = btnRow.createEl("button", { text: "Test connection", cls: "mod-cta" });
     testBtn.addEventListener("click", async () => {
       const url = urlInput.value.trim();
       const token = tokenInput.value.trim();
 
-      if (!url) { this.showStatus("Enter a gateway URL", "error"); return; }
+      if (!url) { this.showStatus("Paste your gateway URL from the previous step", "error"); return; }
       const normalizedUrl = normalizeGatewayUrl(url);
       if (!normalizedUrl) {
-        this.showStatus("Enter a valid URL (e.g. wss://your-machine.tail1234.ts.net)", "error"); return;
+        this.showStatus("That doesn't look right. Paste the URL from `tailscale serve status` (e.g. https://your-machine.tail1234.ts.net)", "error"); return;
       }
-      if (!token) { this.showStatus("Enter your auth token", "error"); return; }
+      if (!token) { this.showStatus("Paste your auth token", "error"); return; }
 
       testBtn.disabled = true;
       testBtn.textContent = "Connecting...";
@@ -552,9 +642,9 @@ class OnboardingModal extends Modal {
 
       if (ok) {
         this.showStatus("✓ Connected!", "success");
-        setTimeout(() => { this.step = 2; this.renderStep(); }, 800);
+        setTimeout(() => { this.step = 4; this.renderStep(); }, 800);
       } else {
-        this.showStatus("Could not connect. Try the troubleshooting steps below.", "error");
+        this.showStatus("Could not connect. Check the troubleshooting steps below.", "error");
         troubleshoot.style.display = "";
       }
     });
@@ -574,12 +664,12 @@ class OnboardingModal extends Modal {
     return box;
   }
 
-  // ─── Step 2: Device Pairing ──────────────────────────────────────
+  // ─── Step 4: Device Pairing ──────────────────────────────────────
 
   private renderPairing(el: HTMLElement): void {
     el.createEl("h2", { text: "Pair this device" });
     el.createEl("p", {
-      text: "Your device needs to be approved by the gateway. This creates a secure keypair unique to this device.",
+      text: "For security, each device needs one-time approval from the gateway. This creates a unique keypair for this device so the gateway knows it's you.",
       cls: "openclaw-onboard-desc",
     });
 
@@ -593,11 +683,22 @@ class OnboardingModal extends Modal {
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
+    // Approval instructions (always visible)
+    const approvalInfo = el.createDiv("openclaw-onboard-numbered");
+    const a1 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
+    a1.createEl("strong", { text: "How approval works" });
+    a1.createEl("p", { text: "Click the button below to send a pairing request. Then, on your gateway machine, run:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(a1, "openclaw devices list");
+    a1.createEl("p", { text: "You'll see your pending request. Approve it with:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(a1, "openclaw devices approve <requestId>");
+    const a1hint = a1.createEl("p", { cls: "openclaw-onboard-hint" });
+    a1hint.innerHTML = "Replace <code>&lt;requestId&gt;</code> with the ID shown in the pending list. You can also approve from the OpenClaw Control UI dashboard.";
+
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 3; this.renderStep(); });
 
     const pairBtn = btnRow.createEl("button", {
-      text: hasKeys ? "Check pairing status" : "Generate keypair & pair",
+      text: hasKeys ? "Check pairing status" : "Send pairing request",
       cls: "mod-cta",
     });
     pairBtn.addEventListener("click", async () => {
@@ -612,7 +713,7 @@ class OnboardingModal extends Modal {
         await new Promise(r => setTimeout(r, 2000));
 
         if (!this.plugin.gatewayConnected) {
-          this.showStatus("Could not connect to gateway. Check your settings.", "error");
+          this.showStatus("Could not connect to gateway. Go back and check your settings.", "error");
           pairBtn.disabled = false;
           return;
         }
@@ -622,14 +723,14 @@ class OnboardingModal extends Modal {
           const result = await this.plugin.gateway!.request("sessions.list", {});
           if (result?.sessions) {
             this.showStatus("✓ Device is paired and authorized!", "success");
-            setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+            setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
             return;
           }
         } catch (e: any) {
           // If we get an auth error, device needs approval
           const msg = String(e);
           if (msg.includes("scope") || msg.includes("auth") || msg.includes("pair")) {
-            this.showStatus("⏳ Device pairing requested. Approve it on your gateway machine:\n\n• Open the OpenClaw dashboard, or\n• Run: openclaw devices\n\nWaiting for approval...", "info");
+            this.showStatus("⏳ Pairing request sent! Now approve it on your gateway machine using the commands above.\n\nWaiting for approval...", "info");
             this.startPairingPoll(pairBtn);
             return;
           }
@@ -637,7 +738,7 @@ class OnboardingModal extends Modal {
 
         // If we got here, connection works — might already be paired
         this.showStatus("✓ Connection working! Proceeding...", "success");
-        setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+        setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
       } catch (e) {
         this.showStatus(`Error: ${e}`, "error");
         pairBtn.disabled = false;
@@ -645,7 +746,7 @@ class OnboardingModal extends Modal {
     });
 
     const skipBtn = btnRow.createEl("button", { text: "Skip for now" });
-    skipBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
+    skipBtn.addEventListener("click", () => { this.step = 5; this.renderStep(); });
   }
 
   private startPairingPoll(btn: HTMLButtonElement): void {
@@ -654,7 +755,7 @@ class OnboardingModal extends Modal {
       attempts++;
       if (attempts > 60) { // 2 minutes
         if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
-        this.showStatus("Timed out waiting for approval. You can approve later and retry.", "error");
+        this.showStatus("Timed out waiting for approval. You can approve later and re-run the setup wizard from settings.", "error");
         btn.disabled = false;
         return;
       }
@@ -663,13 +764,13 @@ class OnboardingModal extends Modal {
         if (result?.sessions) {
           if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
           this.showStatus("✓ Device approved!", "success");
-          setTimeout(() => { this.step = 3; this.renderStep(); }, 1000);
+          setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
         }
       } catch { /* still waiting */ }
     }, 2000);
   }
 
-  // ─── Step 3: Done ────────────────────────────────────────────────
+  // ─── Step 5: Done ────────────────────────────────────────────────
 
   private renderDone(el: HTMLElement): void {
     el.createEl("h2", { text: "You're all set! 🎉" });
@@ -689,8 +790,13 @@ class OnboardingModal extends Modal {
     const syncTip = el.createDiv("openclaw-onboard-info");
     syncTip.createEl("strong", { text: "💡 Sync tip: " });
     syncTip.createEl("span", {
-      text: "Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically.",
+      text: "Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically — set up once, works everywhere.",
     });
+
+    const controlTip = el.createDiv("openclaw-onboard-info");
+    controlTip.createEl("strong", { text: "🖥️ Control UI: " });
+    const ctrlSpan = controlTip.createEl("span");
+    ctrlSpan.innerHTML = "You can also manage your gateway from any browser on your Tailscale network. Just open your gateway URL in a browser.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     const doneBtn = btnRow.createEl("button", { text: "Start chatting →", cls: "mod-cta" });
