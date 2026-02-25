@@ -927,6 +927,23 @@ class OpenClawChatView extends ItemView {
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
 
+        // DEBUG: Log message types to find where audio paths live
+        for (const m of this.messages) {
+          const hasMedia = m.text.includes("MEDIA:");
+          const hasAudioTag = m.text.includes("audio_as_voice");
+          if (hasMedia || hasAudioTag) {
+            console.log("[ObsidianClaw] Found MEDIA/audio in msg:", m.role, m.text.substring(0, 200));
+          }
+          if (m.contentBlocks) {
+            for (const b of m.contentBlocks) {
+              const bstr = JSON.stringify(b);
+              if (bstr.includes("MEDIA:") || bstr.includes("tts")) {
+                console.log("[ObsidianClaw] Found in contentBlock:", b.type, bstr.substring(0, 200));
+              }
+            }
+          }
+        }
+
         // Post-process: extract audio from tool_result user messages → attach to preceding assistant
         for (let i = 0; i < this.messages.length; i++) {
           const m = this.messages[i];
@@ -1551,9 +1568,11 @@ class OpenClawChatView extends ItemView {
 
       // TTS: extract audio path from tool result and store for rendering
       if (toolName === "tts") {
+        console.log("[ObsidianClaw] TTS result event:", JSON.stringify(payload.data).substring(0, 500));
         const audioPath: string | undefined =
           payload.data?.result?.details?.audioPath ||
           this.extractMediaPathFromResult(payload.data?.result);
+        console.log("[ObsidianClaw] Extracted audioPath:", audioPath || "NONE");
         if (audioPath) this.pendingAudioPaths.push(audioPath);
       }
 
