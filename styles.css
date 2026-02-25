@@ -853,3 +853,51 @@
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
+
+/* Audio player for voice messages */
+.openclaw-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  margin-top: 4px;
+}
+
+.openclaw-audio-play-btn {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 110px;
+  text-align: center;
+}
+
+.openclaw-audio-play-btn:hover {
+  opacity: 0.85;
+}
+
+.openclaw-audio-play-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.openclaw-audio-progress {
+  flex: 1;
+  height: 4px;
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.openclaw-audio-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--interactive-accent);
+  border-radius: 2px;
+  transition: width 0.2s linear;
+}

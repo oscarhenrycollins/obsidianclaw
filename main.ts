@@ -1670,8 +1670,75 @@ class OpenClawChatView extends ItemView {
     text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, "").trim();
     text = text.replace(/^\[media attached:.*?\]\s*/gm, "").trim();
     text = text.replace(/^To send an image back.*$/gm, "").trim();
+    // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
+    text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
+    text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
+  }
+
+  /** Extract audio file paths from message text (MEDIA:/path/to/audio.ext) */
+  private extractAudioPaths(text: string): string[] {
+    const paths: string[] = [];
+    const audioExts = /\.(opus|mp3|mp4|wav|ogg|m4a)$/i;
+    const mediaRe = /^MEDIA:(\/[^\n]+)$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = mediaRe.exec(text)) !== null) {
+      const p = match[1].trim();
+      if (audioExts.test(p)) paths.push(p);
+    }
+    return paths;
+  }
+
+  /** Render an inline audio player for a local audio file */
+  private renderAudioPlayer(container: HTMLElement, audioPath: string): void {
+    const playerEl = container.createDiv("openclaw-audio-player");
+    const playBtn = playerEl.createEl("button", { cls: "openclaw-audio-play-btn", text: "▶ Voice message" });
+    const progressEl = playerEl.createDiv("openclaw-audio-progress");
+    const barEl = progressEl.createDiv("openclaw-audio-bar");
+
+    let audio: HTMLAudioElement | null = null;
+    let blobUrl: string | null = null;
+
+    playBtn.addEventListener("click", async () => {
+      if (audio && !audio.paused) {
+        audio.pause();
+        playBtn.textContent = "▶ Voice message";
+        return;
+      }
+
+      if (!audio) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const fs = require("fs") as typeof import("fs");
+          const buffer = fs.readFileSync(audioPath);
+          const ext = audioPath.split(".").pop()?.toLowerCase() || "opus";
+          const mimeMap: Record<string, string> = {
+            opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
+            mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
+          };
+          const blob = new Blob([buffer], { type: mimeMap[ext] || "audio/ogg; codecs=opus" });
+          blobUrl = URL.createObjectURL(blob);
+          audio = new Audio(blobUrl);
+          audio.addEventListener("timeupdate", () => {
+            if (audio && audio.duration) {
+              barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+            }
+          });
+          audio.addEventListener("ended", () => {
+            playBtn.textContent = "▶ Voice message";
+            barEl.style.width = "0%";
+          });
+        } catch {
+          playBtn.textContent = "⚠ Audio unavailable";
+          playBtn.disabled = true;
+          return;
+        }
+      }
+
+      playBtn.textContent = "⏸ Playing...";
+      await audio.play();
+    });
   }
 
   private extractDeltaText(msg: any): string {
@@ -1713,13 +1780,26 @@ class OpenClawChatView extends ItemView {
           // Render interleaved text + tool blocks directly
           for (const block of msg.contentBlocks) {
             if (block.type === "text" && block.text?.trim()) {
+              const blockAudio = this.extractAudioPaths(block.text);
               const cleaned = this.cleanText(block.text);
-              if (!cleaned) continue;
-              const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
-              try {
-                await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
-              } catch {
-                bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
+              // Render text bubble if there's visible text
+              if (cleaned) {
+                const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+                try {
+                  await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
+                } catch {
+                  bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
+                }
+                // Audio players inside text bubble
+                for (const ap of blockAudio) {
+                  this.renderAudioPlayer(bubble, ap);
+                }
+              } else if (blockAudio.length > 0) {
+                // No visible text but has audio — create a bubble just for the player
+                const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
+                for (const ap of blockAudio) {
+                  this.renderAudioPlayer(bubble, ap);
+                }
               }
             } else if (block.type === "tool_use" || block.type === "toolCall") {
               const { label, url } = this.buildToolLabel(block.name || "", block.input || block.arguments || {});
@@ -1749,17 +1829,28 @@ class OpenClawChatView extends ItemView {
           });
         }
       }
+      // Extract audio paths before cleaning (MEDIA:/path lines)
+      const audioPaths = msg.text ? this.extractAudioPaths(msg.text) : [];
+
       // Render text
       if (msg.text) {
-        if (msg.role === "assistant") {
-          try {
-            await MarkdownRenderer.render(this.app, msg.text, bubble, "", this.plugin);
-          } catch {
-            bubble.createDiv({ text: msg.text, cls: "openclaw-msg-text" });
+        const displayText = msg.role === "assistant" ? this.cleanText(msg.text) : msg.text;
+        if (displayText) {
+          if (msg.role === "assistant") {
+            try {
+              await MarkdownRenderer.render(this.app, displayText, bubble, "", this.plugin);
+            } catch {
+              bubble.createDiv({ text: displayText, cls: "openclaw-msg-text" });
+            }
+          } else {
+            bubble.createDiv({ text: displayText, cls: "openclaw-msg-text" });
           }
-        } else {
-          bubble.createDiv({ text: msg.text, cls: "openclaw-msg-text" });
         }
+      }
+
+      // Render audio players for voice messages
+      for (const ap of audioPaths) {
+        this.renderAudioPlayer(bubble, ap);
       }
     }
     this.scrollToBottom();
