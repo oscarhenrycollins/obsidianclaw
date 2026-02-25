@@ -383,7 +383,7 @@ interface ChatMessage {
   images: string[]; // data URIs or URLs
   timestamp: number;
   contentBlocks?: any[]; // raw content array from history (preserves tool_use interleaving)
-  audioPaths?: string[]; // local audio file paths from TTS tool results
+  voiceRefs?: string[]; // VOICE:filename.b64 refs for audio playback via gateway
 }
 
 // ─── Onboarding Modal ────────────────────────────────────────────────
@@ -719,7 +719,7 @@ class OpenClawChatView extends ItemView {
   private currentToolCalls: string[] = [];
   /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
   private streamItems: StreamItem[] = [];
-  private pendingAudioPaths: string[] = [];
+
   private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
   private streamEl: HTMLElement | null = null;
   private contextMeterEl!: HTMLElement;
@@ -927,43 +927,7 @@ class OpenClawChatView extends ItemView {
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
 
-        // DEBUG: Log message types to find where audio paths live
-        for (const m of this.messages) {
-          const hasMedia = m.text.includes("MEDIA:");
-          const hasAudioTag = m.text.includes("audio_as_voice");
-          if (hasMedia || hasAudioTag) {
-            console.log("[ObsidianClaw] Found MEDIA/audio in msg:", m.role, m.text.substring(0, 200));
-          }
-          if (m.contentBlocks) {
-            for (const b of m.contentBlocks) {
-              const bstr = JSON.stringify(b);
-              if (bstr.includes("MEDIA:") || bstr.includes("tts")) {
-                console.log("[ObsidianClaw] Found in contentBlock:", b.type, bstr.substring(0, 200));
-              }
-            }
-          }
-        }
-
-        // Post-process: extract audio from tool_result user messages → attach to preceding assistant
-        for (let i = 0; i < this.messages.length; i++) {
-          const m = this.messages[i];
-          if (m.role === "user") {
-            const audio = this.extractAudioPaths(m.text);
-            if (audio.length > 0) {
-              // Find preceding assistant message
-              for (let j = i - 1; j >= 0; j--) {
-                if (this.messages[j].role === "assistant") {
-                  this.messages[j].audioPaths = [...(this.messages[j].audioPaths || []), ...audio];
-                  break;
-                }
-              }
-              // Clean the user message text (remove MEDIA: and audio_as_voice lines)
-              m.text = m.text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
-            }
-          }
-        }
-        // Re-filter: remove now-empty messages
-        this.messages = this.messages.filter(m => m.text.trim() || m.images.length > 0 || (m.audioPaths && m.audioPaths.length > 0));
+        // No post-processing needed: VOICE: refs are in the assistant message text itself
 
         await this.renderMessages();
         this.updateContextMeter();
@@ -1504,15 +1468,7 @@ class OpenClawChatView extends ItemView {
           this.showBanner("Compacting context...");
         }
       }
-      // TTS audio — collect audio paths even on passive device
-      const phasePas = payload.data?.phase || payload.phase || "";
-      const toolNamePas = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
-      if (toolNamePas === "tts" && phasePas === "result") {
-        const audioPath: string | undefined =
-          payload.data?.result?.details?.audioPath ||
-          this.extractMediaPathFromResult(payload.data?.result);
-        if (audioPath) this.pendingAudioPaths.push(audioPath);
-      }
+
       return;
     }
 
@@ -1565,16 +1521,6 @@ class OpenClawChatView extends ItemView {
       this.deactivateLastToolItem();
       typingText.textContent = "Thinking";
       this.typingEl.style.display = "";
-
-      // TTS: extract audio path from tool result and store for rendering
-      if (toolName === "tts") {
-        console.log("[ObsidianClaw] TTS result event:", JSON.stringify(payload.data).substring(0, 500));
-        const audioPath: string | undefined =
-          payload.data?.result?.details?.audioPath ||
-          this.extractMediaPathFromResult(payload.data?.result);
-        console.log("[ObsidianClaw] Extracted audioPath:", audioPath || "NONE");
-        if (audioPath) this.pendingAudioPaths.push(audioPath);
-      }
 
       this.scrollToBottom();
     } else if (stream === "compaction" || state === "compacting") {
@@ -1635,18 +1581,10 @@ class OpenClawChatView extends ItemView {
         this.updateStreamBubble();
       }
     } else if (payload.state === "final") {
-      const collectedAudio = [...this.pendingAudioPaths];
       this.finishStream();
 
       // Reload history — contentBlocks from gateway have proper tool interleaving
       this.loadHistory().then(async () => {
-        // Attach collected TTS audio paths to the last assistant message
-        if (collectedAudio.length > 0) {
-          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
-          if (lastAssistant) {
-            lastAssistant.audioPaths = [...(lastAssistant.audioPaths || []), ...collectedAudio];
-          }
-        }
         await this.renderMessages();
         this.updateContextMeter();
       });
@@ -1678,7 +1616,6 @@ class OpenClawChatView extends ItemView {
     this.currentToolCalls = [];
     this.streamItems = [];
     this.streamSplitPoints = [];
-    this.pendingAudioPaths = [];
     this.streamEl = null;
     this.abortBtn.style.display = "none";
     this.typingEl.style.display = "none";
@@ -1739,49 +1676,57 @@ class OpenClawChatView extends ItemView {
     // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
     text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
     text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
+    text = text.replace(/^VOICE:[^\s\n]+\.b64$/gm, "").trim();
     if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
     return text;
   }
 
-  /** Extract MEDIA: audio path from a tool result object */
-  private extractMediaPathFromResult(result: any): string | undefined {
-    if (!result) return undefined;
-    const content = Array.isArray(result.content) ? result.content : [];
-    for (const item of content) {
-      if (item?.type === "text" && typeof item.text === "string") {
-        const match = item.text.match(/^MEDIA:(\/[^\n]+\.(?:opus|mp3|mp4|wav|ogg|m4a))$/m);
-        if (match) return match[1];
-      }
-    }
-    // Also check if result is just a string
-    if (typeof result === "string") {
-      const match = result.match(/^MEDIA:(\/[^\n]+\.(?:opus|mp3|mp4|wav|ogg|m4a))$/m);
-      if (match) return match[1];
-    }
-    return undefined;
-  }
-
-  /** Extract audio file paths from message text (MEDIA:/path/to/audio.ext) */
-  private extractAudioPaths(text: string): string[] {
-    const paths: string[] = [];
-    const audioExts = /\.(opus|mp3|mp4|wav|ogg|m4a)$/i;
-    const mediaRe = /^MEDIA:(\/[^\n]+)$/gm;
+  /** Extract VOICE:filename references from message text */
+  private extractVoiceRefs(text: string): string[] {
+    const refs: string[] = [];
+    const re = /^VOICE:([^\s\n]+\.b64)$/gm;
     let match: RegExpExecArray | null;
-    while ((match = mediaRe.exec(text)) !== null) {
-      const p = match[1].trim();
-      if (audioExts.test(p)) paths.push(p);
+    while ((match = re.exec(text)) !== null) {
+      refs.push(match[1].trim());
     }
-    return paths;
+    return refs;
   }
 
-  /** Render an inline audio player for a local audio file */
-  private renderAudioPlayer(container: HTMLElement, audioPath: string): void {
+  /** Fetch a voice file from workspace via gateway WebSocket, decode base64 → Blob URL */
+  private async fetchVoiceFromGateway(filename: string): Promise<string | null> {
+    if (!this.plugin.gateway?.connected) return null;
+    try {
+      const result = await this.plugin.gateway.request("agents.files.get", { name: filename });
+      const b64Content = result?.file?.content;
+      if (!b64Content || result?.file?.missing) return null;
+      // Decode base64 to binary
+      const raw = atob(b64Content.trim());
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      // Detect audio type from original filename encoded in the b64 filename
+      // Format: voice-{timestamp}.{ext}.b64
+      const origExt = filename.replace(/\.b64$/, "").split(".").pop()?.toLowerCase() || "mp3";
+      const mimeMap: Record<string, string> = {
+        opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
+        mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
+      };
+      const blob = new Blob([bytes], { type: mimeMap[origExt] || "audio/mpeg" });
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.error("[ObsidianClaw] Failed to fetch voice from gateway:", e);
+      return null;
+    }
+  }
+
+  /** Render an inline audio player that fetches audio via gateway WebSocket */
+  private renderAudioPlayer(container: HTMLElement, voiceRef: string): void {
     const playerEl = container.createDiv("openclaw-audio-player");
     const playBtn = playerEl.createEl("button", { cls: "openclaw-audio-play-btn", text: "▶ Voice message" });
     const progressEl = playerEl.createDiv("openclaw-audio-progress");
     const barEl = progressEl.createDiv("openclaw-audio-bar");
 
     let audio: HTMLAudioElement | null = null;
+    let blobUrl: string | null = null;
 
     playBtn.addEventListener("click", async () => {
       if (audio && !audio.paused) {
@@ -1791,32 +1736,10 @@ class OpenClawChatView extends ItemView {
       }
 
       if (!audio) {
+        playBtn.textContent = "⏳ Loading...";
         try {
-          // Resolve vault-relative path (openclaw-attachments/...) via Obsidian's vault adapter
-          let vaultPath = audioPath;
-          if (audioPath.startsWith("/")) {
-            // Absolute path: check if it's within the vault
-            const vaultBase = (this.app.vault.adapter as any).basePath || "";
-            if (vaultBase && audioPath.startsWith(vaultBase)) {
-              vaultPath = audioPath.substring(vaultBase.length + 1);
-            } else if (audioPath.includes("openclaw-attachments/")) {
-              vaultPath = "openclaw-attachments/" + audioPath.split("openclaw-attachments/")[1];
-            }
-          }
-
-          console.log("[ObsidianClaw] Loading audio from vault:", vaultPath);
-
-          // Read binary from vault (works on all devices via Obsidian Sync)
-          const arrayBuf = await this.app.vault.adapter.readBinary(vaultPath);
-          console.log("[ObsidianClaw] Read", arrayBuf.byteLength, "bytes from vault");
-
-          const ext = vaultPath.split(".").pop()?.toLowerCase() || "mp3";
-          const mimeMap: Record<string, string> = {
-            opus: "audio/ogg; codecs=opus", mp3: "audio/mpeg",
-            mp4: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4",
-          };
-          const blob = new Blob([arrayBuf], { type: mimeMap[ext] || "audio/mpeg" });
-          const blobUrl = URL.createObjectURL(blob);
+          blobUrl = await this.fetchVoiceFromGateway(voiceRef);
+          if (!blobUrl) throw new Error("Could not fetch voice data");
 
           audio = new Audio(blobUrl);
           audio.addEventListener("timeupdate", () => {
@@ -1825,7 +1748,6 @@ class OpenClawChatView extends ItemView {
           audio.addEventListener("ended", () => {
             playBtn.textContent = "▶ Voice message";
             barEl.style.width = "0%";
-            URL.revokeObjectURL(blobUrl);
           });
         } catch (e) {
           console.error("[ObsidianClaw] Audio load failed:", e);
@@ -1879,7 +1801,7 @@ class OpenClawChatView extends ItemView {
           // Render interleaved text + tool blocks directly
           for (const block of msg.contentBlocks) {
             if (block.type === "text" && block.text?.trim()) {
-              const blockAudio = this.extractAudioPaths(block.text);
+              const blockAudio = this.extractVoiceRefs(block.text);
               const cleaned = this.cleanText(block.text);
               // Render text bubble if there's visible text
               if (cleaned) {
@@ -1929,8 +1851,7 @@ class OpenClawChatView extends ItemView {
         }
       }
       // Combine audio paths from message metadata + text content
-      const textAudio = msg.text ? this.extractAudioPaths(msg.text) : [];
-      const allAudio = [...(msg.audioPaths || []), ...textAudio];
+      const allAudio = msg.text ? this.extractVoiceRefs(msg.text) : [];
 
       // Render text
       if (msg.text) {
