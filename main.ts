@@ -849,6 +849,7 @@ class OpenClawChatView extends ItemView {
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
   private modelLabelEl!: HTMLElement;
+  private sessionPillEl!: HTMLElement;
   private currentModel: string = "";
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -889,8 +890,11 @@ class OpenClawChatView extends ItemView {
     // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Model label (read-only display)
-    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-model-label" });
+    // Agent/session pill (clickable — opens session manager)
+    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-session-pill" });
+    this.sessionPillEl.title = "Session manager";
+    this.sessionPillEl.addEventListener("click", () => this.openSessionManager());
+    this.updateSessionPill();
 
     // Meter bar (inline, grows to fill space)
     this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
@@ -900,11 +904,8 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
 
-    // Session management button (opens modal with compact / new / switch)
-    const manageBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
-    manageBtn.textContent = "⚙";
-    manageBtn.title = "Session management";
-    manageBtn.addEventListener("click", () => this.openSessionManager());
+    // Model label (read-only display, right side)
+    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-model-label" });
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -1365,6 +1366,14 @@ class OpenClawChatView extends ItemView {
         this.modelLabelEl.textContent = this.shortModelName(fullModel);
       }
     } catch { /* ignore */ }
+  }
+
+  updateSessionPill(): void {
+    if (!this.sessionPillEl) return;
+    const sessionKey = this.plugin.settings.sessionKey || "main";
+    this.sessionPillEl.empty();
+    this.sessionPillEl.createSpan({ text: sessionKey, cls: "openclaw-session-pill-label" });
+    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-session-pill-arrow" });
   }
 
   openSessionManager(): void {
@@ -2292,7 +2301,9 @@ export default class OpenClawPlugin extends Plugin {
 class SessionManagerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
+  private agents: any[] = [];
   private sessions: any[] = [];
+  private selectedAgentId = "main";
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2301,14 +2312,23 @@ class SessionManagerModal extends Modal {
   }
 
   async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-session-manager");
-    this.contentEl.createEl("h2", { text: "Session Manager" });
-    this.contentEl.createDiv("openclaw-sm-loading").textContent = "Loading sessions...";
+    this.modalEl.addClass("openclaw-sm");
+    this.contentEl.createDiv("openclaw-sm-loading").textContent = "Loading...";
+
+    // Extract current agent from session key (e.g. "main" -> agent "main")
+    this.selectedAgentId = "main";
 
     try {
-      const result = await this.plugin.gateway?.request("sessions.list", {});
-      this.sessions = result?.sessions || [];
-    } catch { this.sessions = []; }
+      const [agentResult, sessionResult] = await Promise.all([
+        this.plugin.gateway?.request("agents.list", {}),
+        this.plugin.gateway?.request("sessions.list", {}),
+      ]);
+      this.agents = agentResult?.agents || [{ id: "main" }];
+      this.sessions = sessionResult?.sessions || [];
+    } catch {
+      this.agents = [{ id: "main" }];
+      this.sessions = [];
+    }
 
     this.render();
   }
@@ -2319,86 +2339,120 @@ class SessionManagerModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
 
-    // ─── Current Session ───────────────────────────────────────
-    contentEl.createEl("h2", { text: "Session Manager" });
+    const currentSessionKey = this.plugin.settings.sessionKey || "main";
 
-    const currentKey = this.plugin.settings.sessionKey || "main";
-    const resolvedKey = `agent:main:${currentKey}`;
-    const currentSession = this.sessions.find((s: any) => s.key === resolvedKey);
+    // ─── Agent tier ────────────────────────────────────────────
+    if (this.agents.length > 1) {
+      const agentSection = contentEl.createDiv("openclaw-sm-tier");
+      agentSection.createDiv({ text: "Agent", cls: "openclaw-sm-tier-label" });
+      const agentList = agentSection.createDiv("openclaw-sm-agent-list");
 
-    const currentSection = contentEl.createDiv("openclaw-sm-current");
-    currentSection.createEl("h3", { text: "Current session" });
-
-    if (currentSession) {
-      const used = currentSession.totalTokens || 0;
-      const max = currentSession.contextTokens || 200000;
-      const pct = Math.min(100, Math.round((used / max) * 100));
-      const model = currentSession.model || "unknown";
-      const info = currentSection.createDiv("openclaw-sm-session-info");
-      info.innerHTML = `<strong>${currentKey}</strong> · ${this.shortModel(model)} · ${pct}% context used`;
-    } else {
-      currentSection.createEl("p", { text: `Session: ${currentKey}`, cls: "openclaw-sm-hint" });
+      for (const agent of this.agents) {
+        const isActive = agent.id === this.selectedAgentId;
+        const pill = agentList.createDiv({
+          cls: `openclaw-sm-agent-pill${isActive ? " active" : ""}`,
+          text: agent.id,
+        });
+        pill.addEventListener("click", () => {
+          this.selectedAgentId = agent.id;
+          this.render();
+        });
+      }
     }
 
-    const actionRow = currentSection.createDiv("openclaw-sm-actions");
+    // ─── Session tier ──────────────────────────────────────────
+    const sessionSection = contentEl.createDiv("openclaw-sm-tier");
+    const sessionHeader = sessionSection.createDiv("openclaw-sm-tier-header");
+    sessionHeader.createDiv({ text: "Sessions", cls: "openclaw-sm-tier-label" });
 
-    const compactBtn = actionRow.createEl("button", { text: "Compact context", cls: "mod-cta" });
-    compactBtn.title = "Summarize the conversation to free up space. Your agent keeps all its memories.";
+    // Filter sessions for selected agent, hide cron/internal
+    const agentPrefix = `agent:${this.selectedAgentId}:`;
+    const agentSessions = this.sessions.filter((s: any) =>
+      s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
+    );
+
+    const sessionList = sessionSection.createDiv("openclaw-sm-session-list");
+
+    if (agentSessions.length === 0) {
+      sessionList.createDiv({ text: "No active sessions", cls: "openclaw-sm-empty" });
+    }
+
+    for (const session of agentSessions) {
+      const shortKey = session.key.slice(agentPrefix.length);
+      const isCurrent = shortKey === currentSessionKey;
+      const used = session.totalTokens || 0;
+      const max = session.contextTokens || 200000;
+      const pct = Math.min(100, Math.round((used / max) * 100));
+      const model = session.model || "";
+
+      const row = sessionList.createDiv({
+        cls: `openclaw-sm-session${isCurrent ? " current" : ""}`,
+      });
+
+      // Left: name + meta
+      const info = row.createDiv("openclaw-sm-session-left");
+      const nameRow = info.createDiv("openclaw-sm-session-name");
+      if (isCurrent) nameRow.createSpan({ text: "● ", cls: "openclaw-sm-dot" });
+      nameRow.createSpan({ text: shortKey });
+      const meta = info.createDiv("openclaw-sm-session-meta");
+      meta.textContent = `${this.shortModel(model)}${pct > 0 ? " · " + pct + "%" : ""}`;
+
+      // Right: mini meter + action
+      const right = row.createDiv("openclaw-sm-session-right");
+      const meter = right.createDiv("openclaw-sm-mini-meter");
+      const fill = meter.createDiv("openclaw-sm-mini-fill");
+      fill.style.width = pct + "%";
+      fill.className = "openclaw-sm-mini-fill" + (pct > 80 ? " high" : pct > 60 ? " mid" : "");
+
+      if (!isCurrent) {
+        const switchBtn = right.createEl("button", { text: "Switch", cls: "openclaw-sm-btn-sm" });
+        switchBtn.addEventListener("click", async () => {
+          this.plugin.settings.sessionKey = shortKey;
+          await this.plugin.saveSettings();
+          this.close();
+          this.chatView.updateSessionPill();
+          await this.plugin.connectGateway();
+          new Notice(`Switched to: ${shortKey}`);
+        });
+      }
+    }
+
+    // ─── Actions tier ──────────────────────────────────────────
+    const actionsSection = contentEl.createDiv("openclaw-sm-actions");
+
+    const compactBtn = actionsSection.createEl("button", { cls: "openclaw-sm-btn" });
+    compactBtn.createSpan({ text: "📦 " });
+    compactBtn.createSpan({ text: "Compact" });
+    compactBtn.title = "Summarize the chat to free up context. Memories are preserved.";
     compactBtn.addEventListener("click", () => {
       this.close();
       this.chatView.compactSession();
     });
 
-    const newBtn = actionRow.createEl("button", { text: "Start fresh" });
-    newBtn.title = "Archive this conversation and start a new one. Memory files are preserved.";
-    newBtn.addEventListener("click", () => {
+    const freshBtn = actionsSection.createEl("button", { cls: "openclaw-sm-btn" });
+    freshBtn.createSpan({ text: "✨ " });
+    freshBtn.createSpan({ text: "New session" });
+    freshBtn.title = "Archive this conversation and start fresh. Memories are preserved.";
+    freshBtn.addEventListener("click", () => {
       this.close();
       new ConfirmModal(this.app, {
-        title: "Start fresh session?",
-        message: "This archives the current conversation and starts a new one. Your agent still remembers you through its memory files — only the live chat resets.",
+        title: "Start new session?",
+        message: "Archives the current conversation and starts fresh. Your agent keeps all its memory files.",
         confirmText: "Start fresh",
-        onConfirm: () => this.chatView.newSession(),
+        onConfirm: () => {
+          this.chatView.newSession();
+          this.chatView.updateSessionPill();
+        },
       }).open();
     });
 
-    // ─── Other Sessions ────────────────────────────────────────
-    const otherSessions = this.sessions.filter((s: any) =>
-      s.key !== resolvedKey && s.key.startsWith("agent:") && !s.key.includes(":cron:")
-    );
-
-    if (otherSessions.length > 0) {
-      contentEl.createEl("h3", { text: "Switch session" });
-      const sessionList = contentEl.createDiv("openclaw-sm-list");
-
-      for (const session of otherSessions) {
-        const shortKey = session.key.replace(/^agent:main:/, "");
-        const used = session.totalTokens || 0;
-        const max = session.contextTokens || 200000;
-        const pct = Math.min(100, Math.round((used / max) * 100));
-        const model = session.model || "";
-
-        const item = sessionList.createDiv("openclaw-sm-item");
-        const itemInfo = item.createDiv("openclaw-sm-item-info");
-        itemInfo.createEl("strong", { text: shortKey });
-        if (model) itemInfo.createSpan({ text: ` · ${this.shortModel(model)} · ${pct}%`, cls: "openclaw-sm-hint" });
-
-        const switchBtn = item.createEl("button", { text: "Switch", cls: "openclaw-sm-switch-btn" });
-        switchBtn.addEventListener("click", async () => {
-          this.plugin.settings.sessionKey = shortKey;
-          await this.plugin.saveSettings();
-          this.close();
-          await this.plugin.connectGateway();
-          new Notice(`Switched to session: ${shortKey}`);
-        });
-      }
-    }
-
-    // ─── Hint ──────────────────────────────────────────────────
-    const hint = contentEl.createDiv("openclaw-sm-footer");
-    hint.innerHTML = "<strong>Compact</strong> summarizes the chat to free space. <strong>Start fresh</strong> archives and resets. Both preserve your agent's memory files.";
+    // ─── Footer ────────────────────────────────────────────────
+    const footer = contentEl.createDiv("openclaw-sm-footer");
+    footer.textContent = "Gateway > Agent > Session > Model";
   }
 
   private shortModel(fullId: string): string {
+    if (!fullId) return "";
     const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
     return model.replace(/^claude-/, "");
   }
