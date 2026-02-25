@@ -1360,16 +1360,20 @@ class OpenClawChatView extends ItemView {
     try {
       const result = await this.plugin.gateway.request("sessions.list", {});
       const sessions = result?.sessions || [];
-      const main = sessions.find((s: any) => s.key === "agent:main:main");
-      if (!main) return;
-      const used = main.totalTokens || 0;
-      const max = main.contextTokens || 200000;
+      // Find session matching current sessionKey (try exact match, then with agent prefix)
+      const sk = this.plugin.settings.sessionKey || "main";
+      const session = sessions.find((s: any) => s.key === sk) ||
+        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
+        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
+      if (!session) return;
+      const used = session.totalTokens || 0;
+      const max = session.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
       // Update model label from session data
-      const fullModel = main.model || "";
+      const fullModel = session.model || "";
       if (fullModel && fullModel !== this.currentModel) {
         this.currentModel = fullModel;
         this.updateModelPill();
@@ -2434,7 +2438,7 @@ class SessionPickerModal extends Modal {
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            await this.plugin.gateway?.request("sessions.delete", { key: session.key });
+            await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
             this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
             this.render();
             new Notice(`Deleted: ${name}`);
@@ -2492,6 +2496,9 @@ class SessionPickerModal extends Modal {
 class ModelPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
+  private models: any[] = [];
+  private currentModel: string = "";
+  private selectedProvider: string | null = null;
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2503,42 +2510,95 @@ class ModelPickerModal extends Modal {
     this.modalEl.addClass("openclaw-picker");
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
-    let models: any[] = [];
     try {
       const result = await this.plugin.gateway?.request("models.list", {});
-      models = result?.models || [];
-    } catch { models = []; }
+      this.models = result?.models || [];
+    } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
-    let currentModel = this.chatView.currentModel || "";
-    if (currentModel && !currentModel.includes("/")) {
-      // If no provider prefix, find the first matching model and use its fullId
-      const match = models.find((m: any) => m.id === currentModel);
-      if (match) currentModel = `${match.provider}/${match.id}`;
+    this.currentModel = this.chatView.currentModel || "";
+    if (this.currentModel && !this.currentModel.includes("/")) {
+      const match = this.models.find((m: any) => m.id === this.currentModel);
+      if (match) this.currentModel = `${match.provider}/${match.id}`;
     }
 
+    // Auto-select provider of current model
+    if (this.currentModel.includes("/")) {
+      this.selectedProvider = this.currentModel.split("/")[0];
+    }
+
+    this.renderProviders();
+  }
+
+  onClose(): void { this.contentEl.empty(); }
+
+  private renderProviders(): void {
     const { contentEl } = this;
     contentEl.empty();
 
+    // Group models by provider
+    const providerMap = new Map<string, any[]>();
+    for (const m of this.models) {
+      const p = m.provider || "unknown";
+      if (!providerMap.has(p)) providerMap.set(p, []);
+      providerMap.get(p)!.push(m);
+    }
+
+    // Current provider from currentModel
+    const currentProvider = this.currentModel.includes("/") ? this.currentModel.split("/")[0] : "";
+
+    const list = contentEl.createDiv("openclaw-picker-list");
+
+    for (const [provider, models] of providerMap) {
+      const isCurrent = provider === currentProvider;
+      const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
+
+      const left = row.createDiv("openclaw-picker-row-left");
+      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
+      left.createSpan({ text: provider, cls: "openclaw-picker-provider-name" });
+
+      const right = row.createDiv("openclaw-picker-row-right");
+      right.createSpan({ text: `${models.length} model${models.length !== 1 ? "s" : ""}`, cls: "openclaw-picker-meta" });
+      right.createSpan({ text: " →", cls: "openclaw-picker-arrow" });
+
+      row.addEventListener("click", () => {
+        this.selectedProvider = provider;
+        this.renderModels(provider);
+      });
+    }
+
+    // Footer
+    const footer = contentEl.createDiv("openclaw-picker-hint openclaw-picker-footer");
+    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Add them in your gateway config.</a>";
+  }
+
+  private renderModels(provider: string): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    // Back button
+    const header = contentEl.createDiv("openclaw-picker-header");
+    const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + provider });
+    backBtn.addEventListener("click", () => this.renderProviders());
+
+    const models = this.models.filter((m: any) => m.provider === provider);
     const list = contentEl.createDiv("openclaw-picker-list openclaw-picker-model-list");
 
     for (const m of models) {
       const fullId = `${m.provider}/${m.id}`;
-      // ONLY match on fullId (provider/id) to avoid duplicates
-      const isCurrent = fullId === currentModel;
+      const isCurrent = fullId === this.currentModel;
       const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
 
       const left = row.createDiv("openclaw-picker-row-left");
       if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
       left.createSpan({ text: m.name || m.id });
 
-      const right = row.createDiv("openclaw-picker-row-right");
-      if (m.provider) right.createSpan({ text: m.provider, cls: "openclaw-picker-meta" });
-
       if (!isCurrent) {
         row.addEventListener("click", async () => {
           if (!this.plugin.gateway?.connected) return;
-          this.close();
+          // Show selecting state
+          row.addClass("openclaw-picker-selecting");
+          row.textContent = "Switching...";
           try {
             await this.plugin.gateway.request("chat.send", {
               sessionKey: this.plugin.settings.sessionKey,
@@ -2549,19 +2609,15 @@ class ModelPickerModal extends Modal {
             this.chatView.currentModel = fullId;
             this.chatView.updateModelPill();
             new Notice(`Model: ${m.name || m.id}`);
+            this.close();
           } catch (e) {
             new Notice(`Failed: ${e}`);
+            this.renderModels(provider);
           }
         });
       }
     }
-
-    // Footer
-    const footer = contentEl.createDiv("openclaw-picker-hint openclaw-picker-footer");
-    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Add them in your gateway config.</a>";
   }
-
-  onClose(): void { this.contentEl.empty(); }
 }
 
 // ─── Confirm Modal ───────────────────────────────────────────────────
