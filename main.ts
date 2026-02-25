@@ -890,11 +890,11 @@ class OpenClawChatView extends ItemView {
     // Context bar (all on one line)
     const contextBar = container.createDiv("openclaw-context-bar");
 
-    // Session pill (clickable — opens session manager)
-    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-session-pill" });
-    this.sessionPillEl.title = "Switch sessions";
-    this.sessionPillEl.addEventListener("click", () => this.openSessionManager());
-    this.updateSessionPill();
+    // Unified context pill (session / model — opens switcher)
+    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-context-pill" });
+    this.sessionPillEl.title = "Switch session or model";
+    this.sessionPillEl.addEventListener("click", () => this.openSwitcher());
+    this.updateContextPill();
 
     // Meter bar (inline, grows to fill space)
     this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
@@ -904,16 +904,14 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
     this.contextLabelEl.textContent = "";
 
-    // Model pill (clickable — opens model picker)
-    this.modelLabelEl = contextBar.createDiv({ cls: "openclaw-model-pill" });
-    this.modelLabelEl.title = "Switch model";
-    this.modelLabelEl.addEventListener("click", () => this.openModelPicker());
-
     // Compact button
     const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
     compactBtn.textContent = "Compact";
     compactBtn.title = "Summarize chat to free context space";
     compactBtn.addEventListener("click", () => this.compactSession());
+
+    // Hidden model label (used internally for tracking, not displayed separately)
+    this.modelLabelEl = createDiv();
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
@@ -1372,24 +1370,26 @@ class OpenClawChatView extends ItemView {
       if (fullModel && fullModel !== this.currentModel) {
         this.currentModel = fullModel;
         this.modelLabelEl.textContent = this.shortModelName(fullModel);
+        this.updateContextPill();
       }
     } catch { /* ignore */ }
   }
 
-  updateSessionPill(): void {
+  updateContextPill(): void {
     if (!this.sessionPillEl) return;
     const sessionKey = this.plugin.settings.sessionKey || "main";
+    const model = this.currentModel ? this.shortModelName(this.currentModel) : "";
     this.sessionPillEl.empty();
-    this.sessionPillEl.createSpan({ text: sessionKey, cls: "openclaw-session-pill-label" });
-    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-session-pill-arrow" });
+    const text = model ? `${sessionKey} / ${model}` : sessionKey;
+    this.sessionPillEl.createSpan({ text, cls: "openclaw-context-pill-label" });
+    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-context-pill-arrow" });
   }
 
-  openSessionManager(): void {
-    new SessionManagerModal(this.app, this.plugin, this).open();
-  }
+  // Keep old name as alias for external callers
+  updateSessionPill(): void { this.updateContextPill(); }
 
-  openModelPicker(): void {
-    new ModelPickerModal(this.app, this.plugin, this).open();
+  openSwitcher(): void {
+    new SwitcherModal(this.app, this.plugin, this).open();
   }
 
   async compactSession(): Promise<void> {
@@ -2307,14 +2307,13 @@ export default class OpenClawPlugin extends Plugin {
 
 // ─── Confirm Modal ──────────────────────────────────────────────────
 
-// ─── Session Manager Modal ───────────────────────────────────────────
+// ─── Unified Switcher Modal ──────────────────────────────────────────
 
-class SessionManagerModal extends Modal {
+class SwitcherModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
-  private agents: any[] = [];
   private sessions: any[] = [];
-  private selectedAgentId = "main";
+  private models: any[] = [];
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2323,21 +2322,19 @@ class SessionManagerModal extends Modal {
   }
 
   async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-sm");
-    this.contentEl.createDiv("openclaw-sm-loading").textContent = "Loading...";
-
-    this.selectedAgentId = "main";
+    this.modalEl.addClass("openclaw-sw");
+    this.contentEl.createDiv("openclaw-sw-loading").textContent = "Loading...";
 
     try {
-      const [agentResult, sessionResult] = await Promise.all([
-        this.plugin.gateway?.request("agents.list", {}),
+      const [sessionResult, modelResult] = await Promise.all([
         this.plugin.gateway?.request("sessions.list", {}),
+        this.plugin.gateway?.request("models.list", {}),
       ]);
-      this.agents = agentResult?.agents || [{ id: "main" }];
       this.sessions = sessionResult?.sessions || [];
+      this.models = modelResult?.models || [];
     } catch {
-      this.agents = [{ id: "main" }];
       this.sessions = [];
+      this.models = [];
     }
 
     this.render();
@@ -2350,33 +2347,18 @@ class SessionManagerModal extends Modal {
     contentEl.empty();
 
     const currentSessionKey = this.plugin.settings.sessionKey || "main";
+    const currentModel = this.chatView.currentModel || "";
 
-    // ─── Agent tier (only if multiple agents) ──────────────────
-    if (this.agents.length > 1) {
-      const agentSection = contentEl.createDiv("openclaw-sm-tier");
-      agentSection.createDiv({ text: "Agent", cls: "openclaw-sm-tier-label" });
-      const agentList = agentSection.createDiv("openclaw-sm-agent-list");
+    // ─── SESSION section ───────────────────────────────────────
+    const sessionSection = contentEl.createDiv("openclaw-sw-section");
+    sessionSection.createDiv({ text: "Session", cls: "openclaw-sw-label" });
 
-      for (const agent of this.agents) {
-        const isActive = agent.id === this.selectedAgentId;
-        const pill = agentList.createDiv({
-          cls: `openclaw-sm-agent-pill${isActive ? " active" : ""}`,
-          text: agent.id,
-        });
-        pill.addEventListener("click", () => {
-          this.selectedAgentId = agent.id;
-          this.render();
-        });
-      }
-    }
-
-    // ─── Session list ──────────────────────────────────────────
-    const agentPrefix = `agent:${this.selectedAgentId}:`;
+    const agentPrefix = "agent:main:";
     const agentSessions = this.sessions.filter((s: any) =>
       s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
     );
 
-    const sessionList = contentEl.createDiv("openclaw-sm-session-list");
+    const sessionList = sessionSection.createDiv("openclaw-sw-list");
 
     for (const session of agentSessions) {
       const shortKey = session.key.slice(agentPrefix.length);
@@ -2386,110 +2368,73 @@ class SessionManagerModal extends Modal {
       const pct = Math.min(100, Math.round((used / max) * 100));
       const model = session.model || "";
 
-      const row = sessionList.createDiv({
-        cls: `openclaw-sm-session${isCurrent ? " current" : ""}`,
-      });
+      const row = sessionList.createDiv({ cls: `openclaw-sw-row${isCurrent ? " active" : ""}` });
+      const left = row.createDiv("openclaw-sw-row-left");
+      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-sw-dot" });
+      left.createSpan({ text: shortKey });
+
+      const right = row.createDiv("openclaw-sw-row-right");
+      right.createSpan({ text: this.shortModel(model), cls: "openclaw-sw-meta" });
+      const meter = right.createDiv("openclaw-sw-meter");
+      const fill = meter.createDiv("openclaw-sw-fill");
+      fill.style.width = pct + "%";
+      if (pct > 80) fill.addClass("high");
+      else if (pct > 60) fill.addClass("mid");
+      right.createSpan({ text: `${pct}%`, cls: "openclaw-sw-pct" });
+
       if (!isCurrent) {
         row.addEventListener("click", async () => {
           this.plugin.settings.sessionKey = shortKey;
           await this.plugin.saveSettings();
           this.close();
-          this.chatView.updateSessionPill();
+          this.chatView.updateContextPill();
           await this.plugin.connectGateway();
-          new Notice(`Switched to: ${shortKey}`);
+          new Notice(`Session: ${shortKey}`);
         });
       }
-
-      const info = row.createDiv("openclaw-sm-session-left");
-      const nameRow = info.createDiv("openclaw-sm-session-name");
-      if (isCurrent) nameRow.createSpan({ text: "● ", cls: "openclaw-sm-dot" });
-      nameRow.createSpan({ text: shortKey });
-
-      const right = row.createDiv("openclaw-sm-session-right");
-      const meta = right.createSpan({ cls: "openclaw-sm-session-meta" });
-      meta.textContent = this.shortModel(model);
-      const meter = right.createDiv("openclaw-sm-mini-meter");
-      const fill = meter.createDiv("openclaw-sm-mini-fill");
-      fill.style.width = pct + "%";
-      fill.className = "openclaw-sm-mini-fill" + (pct > 80 ? " high" : pct > 60 ? " mid" : "");
-      right.createSpan({ text: `${pct}%`, cls: "openclaw-sm-session-pct" });
     }
 
-    // ─── + New session row ─────────────────────────────────────
-    const newRow = sessionList.createDiv("openclaw-sm-session openclaw-sm-new-row");
+    // + New session
+    const newRow = sessionList.createDiv("openclaw-sw-row openclaw-sw-add");
     newRow.createSpan({ text: "+ New session" });
     newRow.addEventListener("click", () => {
       this.close();
       new ConfirmModal(this.app, {
         title: "Start new session?",
-        message: "Archives the current conversation and starts fresh. Your agent keeps all its memory files.",
+        message: "Archives the current conversation and starts fresh. Memory files are preserved.",
         confirmText: "Start fresh",
         onConfirm: () => {
           this.chatView.newSession();
-          this.chatView.updateSessionPill();
+          this.chatView.updateContextPill();
         },
       }).open();
     });
-  }
 
-  private shortModel(fullId: string): string {
-    if (!fullId) return "";
-    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
-    return model.replace(/^claude-/, "");
-  }
-}
+    // ─── MODEL section ─────────────────────────────────────────
+    const modelSection = contentEl.createDiv("openclaw-sw-section");
+    modelSection.createDiv({ text: "Model", cls: "openclaw-sw-label" });
 
-// ─── Model Picker Modal ─────────────────────────────────────────────
+    const modelList = modelSection.createDiv("openclaw-sw-list openclaw-sw-model-list");
 
-class ModelPickerModal extends Modal {
-  plugin: OpenClawPlugin;
-  chatView: OpenClawChatView;
-
-  constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
-    super(app);
-    this.plugin = plugin;
-    this.chatView = chatView;
-  }
-
-  async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-mp");
-    this.contentEl.createDiv("openclaw-sm-loading").textContent = "Loading models...";
-
-    let models: any[] = [];
-    let currentModel = this.chatView.currentModel || "";
-
-    try {
-      const result = await this.plugin.gateway?.request("models.list", {});
-      models = result?.models || [];
-    } catch { models = []; }
-
-    this.contentEl.empty();
-
-    const list = this.contentEl.createDiv("openclaw-mp-list");
-
-    for (const m of models) {
+    for (const m of this.models) {
       const fullId = `${m.provider}/${m.id}`;
       const isCurrent = fullId === currentModel || m.id === currentModel;
-      const row = list.createDiv({ cls: `openclaw-mp-row${isCurrent ? " current" : ""}` });
+      const row = modelList.createDiv({ cls: `openclaw-sw-row${isCurrent ? " active" : ""}` });
 
-      const info = row.createDiv("openclaw-mp-info");
-      info.createEl("strong", { text: m.name || m.id });
-      const meta = info.createDiv("openclaw-mp-meta");
+      const left = row.createDiv("openclaw-sw-row-left");
+      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-sw-dot" });
+      left.createSpan({ text: m.name || m.id });
+
+      const right = row.createDiv("openclaw-sw-row-right");
       const tags: string[] = [];
       if (m.provider) tags.push(m.provider);
       if (m.contextWindow) tags.push(`${Math.round(m.contextWindow / 1000)}k`);
-      if (m.reasoning) tags.push("reasoning");
-      meta.textContent = tags.join(" · ");
+      right.createSpan({ text: tags.join(" · "), cls: "openclaw-sw-meta" });
 
-      if (isCurrent) {
-        row.createSpan({ text: "●", cls: "openclaw-mp-active" });
-      }
-
-      row.addEventListener("click", async () => {
-        if (isCurrent) { this.close(); return; }
-        this.close();
-        // Switch model via /model command
-        if (this.plugin.gateway?.connected) {
+      if (!isCurrent) {
+        row.addEventListener("click", async () => {
+          if (!this.plugin.gateway?.connected) return;
+          this.close();
           try {
             await this.plugin.gateway.request("chat.send", {
               sessionKey: this.plugin.settings.sessionKey,
@@ -2498,17 +2443,21 @@ class ModelPickerModal extends Modal {
               idempotencyKey: "model-" + Date.now(),
             });
             this.chatView.currentModel = fullId;
-            this.chatView.modelLabelEl.textContent = this.chatView.shortModelName(fullId);
+            this.chatView.updateContextPill();
             new Notice(`Model: ${m.name || m.id}`);
           } catch (e) {
-            new Notice(`Failed to switch model: ${e}`);
+            new Notice(`Failed: ${e}`);
           }
-        }
-      });
+        });
+      }
     }
   }
 
-  onClose(): void { this.contentEl.empty(); }
+  private shortModel(fullId: string): string {
+    if (!fullId) return "";
+    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
+    return model.replace(/^claude-/, "");
+  }
 }
 
 // ─── Confirm Modal ───────────────────────────────────────────────────

@@ -19,24 +19,11 @@
   background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
   pointer-events: none;
 }
-.openclaw-model-label,
-.openclaw-model-pill {
+.openclaw-model-label {
   font-size: 9px;
   color: var(--text-faint);
   white-space: nowrap;
   line-height: 14px;
-}
-.openclaw-model-pill {
-  padding: 0 7px;
-  height: 16px;
-  line-height: 16px;
-  border-radius: 8px;
-  background: rgba(128,128,128,0.10);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.openclaw-model-pill:hover {
-  background: rgba(128,128,128,0.20);
 }
 .openclaw-context-meter {
   flex: 1;
@@ -986,9 +973,9 @@
   margin: 4px 0;
 }
 
-/* ─── Session Pill (context bar) ─────────────────────────────────── */
+/* ─── Context Pill (context bar) ─────────────────────────────────── */
 
-.openclaw-session-pill {
+.openclaw-context-pill {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -999,220 +986,134 @@
   cursor: pointer;
   transition: background 0.15s;
   flex-shrink: 0;
+  max-width: 50%;
 }
-.openclaw-session-pill:hover {
+.openclaw-context-pill:hover {
   background: rgba(128,128,128,0.20);
 }
-.openclaw-session-pill-label {
+.openclaw-context-pill-label {
   font-size: 9px;
   color: var(--text-muted);
   font-weight: 500;
   white-space: nowrap;
-  max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.openclaw-session-pill-arrow {
+.openclaw-context-pill-arrow {
   font-size: 7px;
   color: var(--text-faint);
   line-height: 1;
+  flex-shrink: 0;
 }
 
-/* ─── Session Manager Modal ──────────────────────────────────────── */
+/* ─── Unified Switcher Modal ─────────────────────────────────────── */
 
-.openclaw-sm .modal-content {
-  max-width: 420px;
+.openclaw-sw .modal-content {
+  max-width: 400px;
 }
-.openclaw-sm-loading {
+.openclaw-sw-loading {
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
   font-size: 0.9em;
 }
-
-/* Tier sections */
-.openclaw-sm-tier {
+.openclaw-sw-section {
   margin-bottom: 12px;
 }
-.openclaw-sm-tier-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-.openclaw-sm-tier-label {
+.openclaw-sw-label {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-faint);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  padding-left: 2px;
 }
-
-/* Agent pills */
-.openclaw-sm-agent-list {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.openclaw-sm-agent-pill {
-  padding: 4px 14px;
-  border-radius: 12px;
-  font-size: 0.85em;
-  cursor: pointer;
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  border: 1px solid transparent;
-  transition: all 0.15s;
-}
-.openclaw-sm-agent-pill:hover {
-  background: var(--background-modifier-hover);
-}
-.openclaw-sm-agent-pill.active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-}
-
-/* Session list */
-.openclaw-sm-session-list {
+.openclaw-sw-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
-.openclaw-sm-session {
+.openclaw-sw-model-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.openclaw-sw-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: var(--background-secondary);
+  padding: 7px 10px;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.12s;
 }
-.openclaw-sm-session:hover {
+.openclaw-sw-row:hover {
   background: var(--background-modifier-hover);
 }
-.openclaw-sm-session.current {
-  background: var(--background-secondary-alt, var(--background-secondary));
-  border-left: 2px solid var(--interactive-accent);
+.openclaw-sw-row.active {
+  background: var(--background-secondary);
   cursor: default;
 }
-.openclaw-sm-session.current:hover {
-  background: var(--background-secondary-alt, var(--background-secondary));
+.openclaw-sw-row.active:hover {
+  background: var(--background-secondary);
 }
-.openclaw-sm-session-left {
+.openclaw-sw-row-left {
+  display: flex;
+  align-items: center;
+  gap: 0;
   flex: 1;
   min-width: 0;
-}
-.openclaw-sm-session-name {
-  font-size: 0.88em;
-  font-weight: 500;
+  font-size: 0.85em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.openclaw-sm-dot {
+.openclaw-sw-dot {
   color: var(--interactive-accent);
-  font-size: 0.7em;
-}
-.openclaw-sm-session-meta {
   font-size: 0.75em;
-  color: var(--text-faint);
 }
-.openclaw-sm-session-pct {
-  font-size: 0.7em;
-  color: var(--text-faint);
-  min-width: 24px;
-  text-align: right;
-}
-.openclaw-sm-session-right {
+.openclaw-sw-row-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
-.openclaw-sm-mini-meter {
-  width: 36px;
+.openclaw-sw-meta {
+  font-size: 0.72em;
+  color: var(--text-faint);
+}
+.openclaw-sw-meter {
+  width: 32px;
   height: 3px;
   background: var(--background-modifier-border);
   border-radius: 1.5px;
   overflow: hidden;
 }
-.openclaw-sm-mini-fill {
+.openclaw-sw-fill {
   height: 100%;
   background: var(--interactive-accent);
   transition: width 0.3s;
 }
-.openclaw-sm-mini-fill.mid { background: #d4a843; }
-.openclaw-sm-mini-fill.high { background: #c44; }
-.openclaw-sm-empty {
-  padding: 16px;
-  text-align: center;
+.openclaw-sw-fill.mid { background: #d4a843; }
+.openclaw-sw-fill.high { background: #c44; }
+.openclaw-sw-pct {
+  font-size: 0.68em;
   color: var(--text-faint);
-  font-size: 0.85em;
+  min-width: 22px;
+  text-align: right;
 }
 
-/* + New session row */
-.openclaw-sm-new-row {
+/* + New row */
+.openclaw-sw-add {
   border: 1px dashed var(--background-modifier-border);
   background: transparent;
   color: var(--text-muted);
   justify-content: center;
-  font-size: 0.85em;
+  font-size: 0.82em;
+  margin-top: 2px;
 }
-.openclaw-sm-new-row:hover {
+.openclaw-sw-add:hover {
   background: var(--background-secondary);
   color: var(--text-normal);
   border-color: var(--text-muted);
-}
-
-/* ─── Model Picker Modal ─────────────────────────────────────────── */
-
-.openclaw-mp .modal-content {
-  max-width: 400px;
-}
-.openclaw-mp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.openclaw-mp-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.openclaw-mp-row:hover {
-  background: var(--background-secondary);
-}
-.openclaw-mp-row.current {
-  background: var(--background-secondary-alt, var(--background-secondary));
-  border-left: 2px solid var(--interactive-accent);
-}
-.openclaw-mp-info {
-  flex: 1;
-  min-width: 0;
-}
-.openclaw-mp-info strong {
-  font-size: 0.88em;
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.openclaw-mp-meta {
-  font-size: 0.72em;
-  color: var(--text-faint);
-  margin-top: 1px;
-}
-.openclaw-mp-active {
-  color: var(--interactive-accent);
-  font-size: 0.8em;
-  flex-shrink: 0;
-  margin-left: 8px;
 }
