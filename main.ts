@@ -851,6 +851,7 @@ class OpenClawChatView extends ItemView {
   modelLabelEl!: HTMLElement;
   private sessionPillEl!: HTMLElement;
   currentModel: string = "";
+  cachedSessionDisplayName: string = "";
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -935,7 +936,7 @@ class OpenClawChatView extends ItemView {
     const inputRow = inputArea.createDiv("openclaw-input-row");
     // Brain button (model picker)
     const brainBtn = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
-    brainBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A5.5 5.5 0 0 0 4 7.5c0 1.58.67 3 1.74 4.01C4.68 12.6 4 14.07 4 15.5A5.5 5.5 0 0 0 9.5 21h0a2 2 0 0 0 2-2v0"/><path d="M14.5 2A5.5 5.5 0 0 1 20 7.5c0 1.58-.67 3-1.74 4.01C19.32 12.6 20 14.07 20 15.5a5.5 5.5 0 0 1-5.5 5.5h0a2 2 0 0 1-2-2v0"/><path d="M12 2v17"/><path d="M8 8h1"/><path d="M15 8h1"/><path d="M8 14h1"/><path d="M15 14h1"/></svg>`;
+    brainBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 14l.9 2.7L22.6 17.6l-2.7.9L19 21.2l-.9-2.7-2.7-.9 2.7-.9z"/><path d="M6 17l.6 1.8L8.4 19.4l-1.8.6L6 21.8l-.6-1.8-1.8-.6 1.8-.6z"/></svg>`;
     brainBtn.addEventListener("click", () => this.openModelPicker());
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
@@ -1372,18 +1373,26 @@ class OpenClawChatView extends ItemView {
         this.currentModel = fullModel;
         this.updateModelPill();
       }
+      // Update session display name from gateway
+      if (session.displayName && session.displayName !== this.cachedSessionDisplayName) {
+        this.cachedSessionDisplayName = session.displayName;
+        this.updateSessionPill();
+      }
     } catch { /* ignore */ }
   }
 
   updateSessionPill(): void {
     if (!this.sessionPillEl) return;
-    const sessionKey = this.plugin.settings.sessionKey || "main";
-    // Show friendly name
-    let display = sessionKey;
-    if (sessionKey === "main") display = "Main";
-    else if (sessionKey.startsWith("telegram:")) display = "Telegram";
-    else if (sessionKey.startsWith("discord:")) display = "Discord";
-    else if (sessionKey.startsWith("whatsapp:")) display = "WhatsApp";
+    // Prefer cached gateway displayName, fall back to local logic
+    let display = this.cachedSessionDisplayName || "";
+    if (!display) {
+      const sessionKey = this.plugin.settings.sessionKey || "main";
+      if (sessionKey === "main") display = "Main";
+      else if (sessionKey.startsWith("telegram:")) display = "Telegram";
+      else if (sessionKey.startsWith("discord:")) display = "Discord";
+      else if (sessionKey.startsWith("whatsapp:")) display = "WhatsApp";
+      else display = sessionKey;
+    }
     this.sessionPillEl.empty();
     this.sessionPillEl.createSpan({ text: display, cls: "openclaw-ctx-pill-text" });
     this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
@@ -2454,8 +2463,12 @@ class SessionPickerModal extends Modal {
           this.plugin.settings.sessionKey = shortKey;
           await this.plugin.saveSettings();
           this.close();
+          this.chatView.cachedSessionDisplayName = name;
           this.chatView.updateSessionPill();
-          await this.plugin.connectGateway();
+          this.chatView.messages = [];
+          this.chatView.messagesEl.empty();
+          await this.chatView.loadHistory();
+          await this.chatView.updateContextMeter();
           new Notice(`Chat: ${name}`);
         });
       }
@@ -2512,8 +2525,20 @@ class ModelPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
     try {
-      const result = await this.plugin.gateway?.request("models.list", {});
-      this.models = result?.models || [];
+      const [modelsResult, sessionsResult] = await Promise.all([
+        this.plugin.gateway?.request("models.list", {}),
+        this.plugin.gateway?.request("sessions.list", {}),
+      ]);
+      this.models = modelsResult?.models || [];
+      // Get fresh current model from gateway session data
+      const sk = this.plugin.settings.sessionKey || "main";
+      const sessions = sessionsResult?.sessions || [];
+      const session = sessions.find((s: any) => s.key === sk) ||
+        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
+        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
+      if (session?.model) {
+        this.chatView.currentModel = session.model;
+      }
     } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
