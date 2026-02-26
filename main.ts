@@ -802,6 +802,8 @@ class OnboardingModal extends Modal {
     const doneBtn = btnRow.createEl("button", { text: "Start chatting →", cls: "mod-cta" });
     doneBtn.addEventListener("click", async () => {
       this.plugin.settings.onboardingComplete = true;
+      // Always reset to "main" session to ensure clean connection
+      this.plugin.settings.sessionKey = "main";
       await this.plugin.saveSettings();
       this.close();
       if (!this.plugin.gatewayConnected) this.plugin.connectGateway();
@@ -2503,30 +2505,16 @@ class SessionPickerModal extends Modal {
             return;
           }
           const sessionKey = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-          // Switch to the new session key
+          // Switch to the new session key — session auto-creates on first message
           this.plugin.settings.sessionKey = sessionKey;
-          await this.plugin.saveSettings();
-          // Clear local messages
           this.chatView.messages = [];
           if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
           await this.plugin.saveSettings();
           this.chatView.messagesEl.empty();
-          // Send /new to create the session on the gateway, then label it
-          try {
-            await this.plugin.gateway?.request("chat.send", {
-              sessionKey: sessionKey,
-              message: "/new",
-              deliver: false,
-              idempotencyKey: "new-" + Date.now(),
-            });
-            // Set the friendly label
-            const fullKey = `agent:${this.botName}:${sessionKey}`;
-            await this.plugin.gateway?.request("sessions.patch", { key: fullKey, label: name.trim() });
-          } catch { /* session will auto-create on first real message */ }
           this.chatView.cachedSessionDisplayName = name.trim();
           this.chatView.updateSessionPill();
-          await this.chatView.updateContextMeter();
-          new Notice(`Created: ${name.trim()}`);
+          this.chatView.updateContextMeter();
+          new Notice(`New conversation: ${name.trim()}. Send a message to start!`);
         },
       }).open();
     });
@@ -2808,15 +2796,26 @@ class OpenClawSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "Session" });
 
     new Setting(containerEl)
-      .setName("Session key")
-      .setDesc("Which agent session to chat in. Use \"main\" for the default agent.")
+      .setName("Conversation")
+      .setDesc("Current conversation key. Use \"main\" for the default session.")
       .addText((text) =>
         text
           .setPlaceholder("main")
           .setValue(this.plugin.settings.sessionKey)
           .onChange(async (value) => {
-            this.plugin.settings.sessionKey = value;
+            this.plugin.settings.sessionKey = value || "main";
             await this.plugin.saveSettings();
+          })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText("Reset to Main")
+          .onClick(async () => {
+            this.plugin.settings.sessionKey = "main";
+            await this.plugin.saveSettings();
+            this.display(); // refresh the settings UI
+            await this.plugin.connectGateway();
+            new Notice("Reset to Main conversation");
           })
       );
 
