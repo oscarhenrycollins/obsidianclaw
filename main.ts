@@ -2412,9 +2412,10 @@ class SessionPickerModal extends Modal {
 
   /** Turn a raw session key into a friendly display name */
   private friendlyName(shortKey: string, session: any): string {
+    // Main is always "Main" regardless of gateway metadata
+    if (shortKey === "main") return "Main";
     if (session.label && session.label.length < 40) return session.label;
     if (session.displayName && session.displayName.length < 40) return session.displayName;
-    if (shortKey === "main") return "Main";
     if (shortKey.startsWith("telegram:")) return "Telegram";
     if (shortKey.startsWith("discord:")) return "Discord";
     if (shortKey.startsWith("whatsapp:")) return "WhatsApp";
@@ -2439,7 +2440,13 @@ class SessionPickerModal extends Modal {
       if (bot.id === this.selectedBot) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
       left.createSpan({ text: bot.id });
       const right = row.createDiv("openclaw-picker-row-right");
-      const convCount = this.sessions.filter(s => s.key.startsWith(`agent:${bot.id}:`) && !s.key.includes(":cron:")).length;
+      const channelPfx = ["telegram:", "discord:", "whatsapp:", "signal:", "webchat:", "slack:", "irc:", "subag"];
+      const prefix = `agent:${bot.id}:`;
+      const convCount = this.sessions.filter(s => {
+        if (!s.key.startsWith(prefix) || s.key.includes(":cron:")) return false;
+        const sk = s.key.slice(prefix.length);
+        return !channelPfx.some(p => sk.startsWith(p));
+      }).length;
       right.createSpan({ text: `${convCount} conversation${convCount !== 1 ? "s" : ""} →`, cls: "openclaw-picker-meta" });
       row.addEventListener("click", () => {
         this.selectedBot = bot.id;
@@ -2599,6 +2606,29 @@ class SessionPickerModal extends Modal {
             return;
           }
           const sessionKey = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+
+          // Create session on gateway by sending /new to that key
+          try {
+            await this.plugin.gateway?.request("chat.send", {
+              sessionKey: sessionKey,
+              message: "/new",
+              deliver: false,
+              idempotencyKey: "create-" + Date.now(),
+            });
+            // Label the session
+            await new Promise(r => setTimeout(r, 500));
+            try {
+              await this.plugin.gateway?.request("sessions.patch", {
+                key: `agent:main:${sessionKey}`,
+                label: name.trim(),
+              });
+            } catch { /* label is optional */ }
+          } catch (err: any) {
+            new Notice(`Create failed: ${err?.message || err}`);
+            return;
+          }
+
+          // Switch to the new session
           this.plugin.settings.sessionKey = sessionKey;
           this.chatView.messages = [];
           if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
@@ -2607,7 +2637,7 @@ class SessionPickerModal extends Modal {
           this.chatView.cachedSessionDisplayName = name.trim();
           this.chatView.updateSessionPill();
           this.chatView.updateContextMeter();
-          new Notice(`New conversation: ${name.trim()}. Send a message to start!`);
+          new Notice(`Created: ${name.trim()}`);
         },
       }).open();
     });
