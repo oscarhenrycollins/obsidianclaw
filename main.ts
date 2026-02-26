@@ -2854,7 +2854,13 @@ class ModelPickerModal extends Modal {
       this.selectedProvider = this.currentModel.split("/")[0];
     }
 
-    this.renderProviders();
+    // If only one provider, skip straight to models
+    const providers = new Set(this.models.map((m: any) => m.provider));
+    if (providers.size === 1) {
+      this.renderModels([...providers][0]);
+    } else {
+      this.renderProviders();
+    }
   }
 
   onClose(): void { this.contentEl.empty(); }
@@ -2904,9 +2910,12 @@ class ModelPickerModal extends Modal {
     contentEl.empty();
 
     // Back button
-    const header = contentEl.createDiv("openclaw-picker-header");
-    const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + provider });
-    backBtn.addEventListener("click", () => this.renderProviders());
+    const providers = new Set(this.models.map((m: any) => m.provider));
+    if (providers.size > 1) {
+      const header = contentEl.createDiv("openclaw-picker-header");
+      const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + provider });
+      backBtn.addEventListener("click", () => this.renderProviders());
+    }
 
     const models = this.models.filter((m: any) => m.provider === provider);
     const list = contentEl.createDiv("openclaw-picker-list openclaw-picker-model-list");
