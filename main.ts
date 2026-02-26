@@ -2396,12 +2396,8 @@ class SessionPickerModal extends Modal {
     this.selectedBot = "main";
     this.bots = [...botIds].map(id => ({ id, isCurrent: id === "main" }));
 
-    // If only one bot, go straight to conversations
-    if (this.bots.length <= 1) {
-      this.renderConversations();
-    } else {
-      this.renderBots();
-    }
+    // Always show bot selection first
+    this.renderBots();
   }
 
   onClose(): void { this.contentEl.empty(); }
