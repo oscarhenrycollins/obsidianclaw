@@ -2338,7 +2338,7 @@ class SessionPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
   private sessions: any[] = [];
-  private assistantName = "main";
+  private botName = "main";
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2348,7 +2348,7 @@ class SessionPickerModal extends Modal {
 
   async onOpen(): Promise<void> {
     this.modalEl.addClass("openclaw-picker");
-    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading...";
+    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading conversations...";
 
     try {
       const result = await this.plugin.gateway?.request("sessions.list", {});
@@ -2362,18 +2362,14 @@ class SessionPickerModal extends Modal {
 
   /** Turn a raw session key into a friendly display name */
   private friendlyName(shortKey: string, session: any): string {
-    // Use displayName from gateway if available and not too long
-    if (session.displayName && session.displayName.length < 30) {
-      return session.displayName;
-    }
-    // "main" → "Main"
+    if (session.label && session.label.length < 40) return session.label;
+    if (session.displayName && session.displayName.length < 40) return session.displayName;
     if (shortKey === "main") return "Main";
-    // "telegram:slash:123" → "Telegram"
     if (shortKey.startsWith("telegram:")) return "Telegram";
     if (shortKey.startsWith("discord:")) return "Discord";
     if (shortKey.startsWith("whatsapp:")) return "WhatsApp";
     if (shortKey.startsWith("signal:")) return "Signal";
-    // Fallback: clean up colons
+    if (shortKey.startsWith("webchat:")) return "WebChat";
     return shortKey.replace(/:/g, " / ");
   }
 
@@ -2383,10 +2379,10 @@ class SessionPickerModal extends Modal {
 
     const currentSessionKey = this.plugin.settings.sessionKey || "main";
 
-    // ─── Assistant header ──────────────────────────────────────
+    // ─── Bot header ──────────────────────────────────────────
     const header = contentEl.createDiv("openclaw-picker-header");
     const headerLeft = header.createDiv("openclaw-picker-header-left");
-    headerLeft.createSpan({ text: `Assistant: ${this.assistantName}`, cls: "openclaw-picker-agent" });
+    headerLeft.createSpan({ text: `Bot: ${this.botName}`, cls: "openclaw-picker-agent" });
 
     const headerRight = header.createDiv("openclaw-picker-header-right");
     const cogBtn = headerRight.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
@@ -2398,17 +2394,17 @@ class SessionPickerModal extends Modal {
     });
 
     const hint = contentEl.createDiv("openclaw-picker-hint");
-    hint.innerHTML = "Want more assistants? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
+    hint.innerHTML = "Want more bots? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
 
-    // ─── Chat list ─────────────────────────────────────────────
-    const agentPrefix = `agent:${this.assistantName}:`;
-    const chats = this.sessions.filter((s: any) =>
+    // ─── Conversation list ─────────────────────────────────────
+    const agentPrefix = `agent:${this.botName}:`;
+    const conversations = this.sessions.filter((s: any) =>
       s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
     );
 
     const list = contentEl.createDiv("openclaw-picker-list");
 
-    for (const session of chats) {
+    for (const session of conversations) {
       const shortKey = session.key.slice(agentPrefix.length);
       const isCurrent = shortKey === currentSessionKey;
       const used = session.totalTokens || 0;
@@ -2423,6 +2419,35 @@ class SessionPickerModal extends Modal {
       left.createSpan({ text: name });
 
       const right = row.createDiv("openclaw-picker-row-right");
+
+      // Rename button
+      const renameBtn = right.createEl("button", { text: "✎", cls: "openclaw-picker-del" });
+      renameBtn.title = "Rename conversation";
+      renameBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        new TextInputModal(this.app, {
+          title: "Rename conversation",
+          placeholder: "New name",
+          confirmText: "Rename",
+          initialValue: name,
+          onConfirm: async (newName: string) => {
+            if (!newName.trim()) return;
+            try {
+              await this.plugin.gateway?.request("sessions.patch", { key: session.key, label: newName.trim() });
+              session.label = newName.trim();
+              if (isCurrent) {
+                this.chatView.cachedSessionDisplayName = newName.trim();
+                this.chatView.updateSessionPill();
+              }
+              this.render();
+              new Notice(`Renamed to: ${newName.trim()}`);
+            } catch (err: any) {
+              new Notice(`Rename failed: ${err?.message || err}`);
+            }
+          },
+        }).open();
+      });
+
       const meter = right.createDiv("openclaw-picker-meter");
       const fill = meter.createDiv("openclaw-picker-fill");
       fill.style.width = pct + "%";
@@ -2430,22 +2455,15 @@ class SessionPickerModal extends Modal {
       else if (pct > 60) fill.addClass("mid");
       right.createSpan({ text: `${pct}%`, cls: "openclaw-picker-pct" });
 
-      // Delete button (not for current chat)
+      // Delete button (not for current conversation)
       if (!isCurrent) {
         const delBtn = right.createEl("button", { text: "✕", cls: "openclaw-picker-del" });
-        delBtn.title = "Delete chat";
+        delBtn.title = "Delete conversation";
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            const result = await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
-            // Re-fetch sessions from gateway to confirm deletion
-            try {
-              const refreshed = await this.plugin.gateway?.request("sessions.list", {});
-              this.sessions = refreshed?.sessions || [];
-            } catch {
-              // Fallback to local filter
-              this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
-            }
+            await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
+            this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
             this.render();
             new Notice(`Deleted: ${name}`);
           } catch (err: any) {
@@ -2465,36 +2483,50 @@ class SessionPickerModal extends Modal {
           this.chatView.messagesEl.empty();
           await this.chatView.loadHistory();
           await this.chatView.updateContextMeter();
-          new Notice(`Chat: ${name}`);
+          new Notice(`Switched to: ${name}`);
         });
       }
     }
 
-    // + New chat
+    // + New conversation
     const newRow = list.createDiv("openclaw-picker-row openclaw-picker-add");
-    newRow.createSpan({ text: "+ New chat" });
+    newRow.createSpan({ text: "+ New conversation" });
     newRow.addEventListener("click", () => {
       this.close();
       new TextInputModal(this.app, {
-        title: "New chat",
-        placeholder: "Chat name (e.g. 'Work', 'Personal', 'Research')",
+        title: "New conversation",
+        placeholder: "Name (e.g. 'Work', 'Personal', 'Research')",
         confirmText: "Create",
         onConfirm: async (name: string) => {
           if (!name.trim()) {
-            new Notice("Chat name cannot be empty");
+            new Notice("Name cannot be empty");
             return;
           }
+          const sessionKey = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
           // Switch to the new session key
-          this.plugin.settings.sessionKey = name.trim();
+          this.plugin.settings.sessionKey = sessionKey;
           await this.plugin.saveSettings();
-          this.chatView.updateSessionPill();
-          // Clear local messages and reconnect
+          // Clear local messages
           this.chatView.messages = [];
           if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
           await this.plugin.saveSettings();
           this.chatView.messagesEl.empty();
-          await this.plugin.connectGateway();
-          new Notice(`New chat: ${name.trim()}`);
+          // Send /new to create the session on the gateway, then label it
+          try {
+            await this.plugin.gateway?.request("chat.send", {
+              sessionKey: sessionKey,
+              message: "/new",
+              deliver: false,
+              idempotencyKey: "new-" + Date.now(),
+            });
+            // Set the friendly label
+            const fullKey = `agent:${this.botName}:${sessionKey}`;
+            await this.plugin.gateway?.request("sessions.patch", { key: fullKey, label: name.trim() });
+          } catch { /* session will auto-create on first real message */ }
+          this.chatView.cachedSessionDisplayName = name.trim();
+          this.chatView.updateSessionPill();
+          await this.chatView.updateContextMeter();
+          new Notice(`Created: ${name.trim()}`);
         },
       }).open();
     });
@@ -2661,10 +2693,10 @@ class ConfirmModal extends Modal {
 // ─── Text Input Modal ────────────────────────────────────────────────
 
 class TextInputModal extends Modal {
-  private config: { title: string; placeholder: string; confirmText: string; onConfirm: (value: string) => void };
+  private config: { title: string; placeholder: string; confirmText: string; initialValue?: string; onConfirm: (value: string) => void };
   private inputEl!: HTMLInputElement;
 
-  constructor(app: App, config: { title: string; placeholder: string; confirmText: string; onConfirm: (value: string) => void }) {
+  constructor(app: App, config: { title: string; placeholder: string; confirmText: string; initialValue?: string; onConfirm: (value: string) => void }) {
     super(app);
     this.config = config;
   }
@@ -2678,6 +2710,7 @@ class TextInputModal extends Modal {
       placeholder: this.config.placeholder,
       cls: "openclaw-text-input",
     });
+    if (this.config.initialValue) this.inputEl.value = this.config.initialValue;
     this.inputEl.focus();
     this.inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
