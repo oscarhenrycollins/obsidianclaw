@@ -2368,7 +2368,8 @@ class SessionPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
   private sessions: any[] = [];
-  private botName = "main";
+  private bots: { id: string; isCurrent: boolean }[] = [];
+  private selectedBot: string = "main";
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
     super(app);
@@ -2378,14 +2379,29 @@ class SessionPickerModal extends Modal {
 
   async onOpen(): Promise<void> {
     this.modalEl.addClass("openclaw-picker");
-    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading conversations...";
+    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading...";
 
     try {
       const result = await this.plugin.gateway?.request("sessions.list", {});
       this.sessions = result?.sessions || [];
     } catch { this.sessions = []; }
 
-    this.render();
+    // Detect bots from session keys (agent:{botId}:...)
+    const botIds = new Set<string>();
+    for (const s of this.sessions) {
+      const match = s.key.match(/^agent:([^:]+):/);
+      if (match) botIds.add(match[1]);
+    }
+    if (botIds.size === 0) botIds.add("main");
+    this.selectedBot = "main";
+    this.bots = [...botIds].map(id => ({ id, isCurrent: id === "main" }));
+
+    // If only one bot, go straight to conversations
+    if (this.bots.length <= 1) {
+      this.renderConversations();
+    } else {
+      this.renderBots();
+    }
   }
 
   onClose(): void { this.contentEl.empty(); }
@@ -2403,19 +2419,53 @@ class SessionPickerModal extends Modal {
     return shortKey.replace(/:/g, " / ");
   }
 
-  private render(): void {
+  // ─── Bot selection (only shown if multiple bots) ──────────────
+  private renderBots(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    contentEl.createEl("h3", { text: "Choose your bot", cls: "openclaw-picker-title" });
+    const hint = contentEl.createDiv("openclaw-picker-hint");
+    hint.innerHTML = "Each bot is a separate AI agent. <a href='https://docs.openclaw.ai/concepts/multi-agent'>Add more on your gateway.</a>";
+
+    const list = contentEl.createDiv("openclaw-picker-list");
+    for (const bot of this.bots) {
+      const row = list.createDiv({ cls: `openclaw-picker-row${bot.id === this.selectedBot ? " active" : ""}` });
+      const left = row.createDiv("openclaw-picker-row-left");
+      if (bot.id === this.selectedBot) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
+      left.createSpan({ text: bot.id });
+      const right = row.createDiv("openclaw-picker-row-right");
+      const convCount = this.sessions.filter(s => s.key.startsWith(`agent:${bot.id}:`) && !s.key.includes(":cron:")).length;
+      right.createSpan({ text: `${convCount} conversation${convCount !== 1 ? "s" : ""} →`, cls: "openclaw-picker-meta" });
+      row.addEventListener("click", () => {
+        this.selectedBot = bot.id;
+        this.renderConversations();
+      });
+    }
+  }
+
+  // ─── Conversation list ────────────────────────────────────────
+  private renderConversations(): void {
     const { contentEl } = this;
     contentEl.empty();
 
     const currentSessionKey = this.plugin.settings.sessionKey || "main";
+    const agentPrefix = `agent:${this.selectedBot}:`;
 
-    // ─── Bot header ──────────────────────────────────────────
-    const header = contentEl.createDiv("openclaw-picker-header");
-    const headerLeft = header.createDiv("openclaw-picker-header-left");
-    headerLeft.createSpan({ text: `Bot: ${this.botName}`, cls: "openclaw-picker-agent" });
+    // Header with back button if multiple bots
+    if (this.bots.length > 1) {
+      const header = contentEl.createDiv("openclaw-picker-header");
+      const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + this.selectedBot });
+      backBtn.addEventListener("click", () => this.renderBots());
+    }
 
-    const headerRight = header.createDiv("openclaw-picker-header-right");
-    const cogBtn = headerRight.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
+    contentEl.createEl("h3", { text: "Conversations", cls: "openclaw-picker-title" });
+    const hint = contentEl.createDiv("openclaw-picker-hint");
+    hint.textContent = "There's always a Main conversation. You can add more for separate topics.";
+
+    // Settings cog
+    const cogRow = contentEl.createDiv("openclaw-picker-header-right");
+    const cogBtn = cogRow.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
     cogBtn.title = "Plugin settings";
     cogBtn.addEventListener("click", () => {
       this.close();
@@ -2423,11 +2473,6 @@ class SessionPickerModal extends Modal {
       (this.app as any).setting?.openTabById?.("openclaw");
     });
 
-    const hint = contentEl.createDiv("openclaw-picker-hint");
-    hint.innerHTML = "Want more bots? <a href='https://docs.openclaw.ai/concepts/multi-agent'>Configure them on your gateway.</a>";
-
-    // ─── Conversation list ─────────────────────────────────────
-    const agentPrefix = `agent:${this.botName}:`;
     const conversations = this.sessions.filter((s: any) =>
       s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
     );
@@ -2441,6 +2486,7 @@ class SessionPickerModal extends Modal {
       const max = session.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
       const name = this.friendlyName(shortKey, session);
+      const isMain = shortKey === "main";
 
       const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
 
@@ -2450,34 +2496,7 @@ class SessionPickerModal extends Modal {
 
       const right = row.createDiv("openclaw-picker-row-right");
 
-      // Rename button
-      const renameBtn = right.createEl("button", { text: "✎", cls: "openclaw-picker-del" });
-      renameBtn.title = "Rename conversation";
-      renameBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        new TextInputModal(this.app, {
-          title: "Rename conversation",
-          placeholder: "New name",
-          confirmText: "Rename",
-          initialValue: name,
-          onConfirm: async (newName: string) => {
-            if (!newName.trim()) return;
-            try {
-              await this.plugin.gateway?.request("sessions.patch", { key: session.key, label: newName.trim() });
-              session.label = newName.trim();
-              if (isCurrent) {
-                this.chatView.cachedSessionDisplayName = newName.trim();
-                this.chatView.updateSessionPill();
-              }
-              this.render();
-              new Notice(`Renamed to: ${newName.trim()}`);
-            } catch (err: any) {
-              new Notice(`Rename failed: ${err?.message || err}`);
-            }
-          },
-        }).open();
-      });
-
+      // Context meter
       const meter = right.createDiv("openclaw-picker-meter");
       const fill = meter.createDiv("openclaw-picker-fill");
       fill.style.width = pct + "%";
@@ -2485,20 +2504,56 @@ class SessionPickerModal extends Modal {
       else if (pct > 60) fill.addClass("mid");
       right.createSpan({ text: `${pct}%`, cls: "openclaw-picker-pct" });
 
-      // Delete button (not for current conversation)
-      if (!isCurrent) {
+      // Rename button (not for main)
+      if (!isMain) {
+        const renameBtn = right.createEl("button", { text: "✎", cls: "openclaw-picker-del" });
+        renameBtn.title = "Rename";
+        renameBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          new TextInputModal(this.app, {
+            title: "Rename conversation",
+            placeholder: "New name",
+            confirmText: "Rename",
+            initialValue: name,
+            onConfirm: async (newName: string) => {
+              if (!newName.trim()) return;
+              try {
+                await this.plugin.gateway?.request("sessions.patch", { key: session.key, label: newName.trim() });
+                session.label = newName.trim();
+                if (isCurrent) {
+                  this.chatView.cachedSessionDisplayName = newName.trim();
+                  this.chatView.updateSessionPill();
+                }
+                this.renderConversations();
+                new Notice(`Renamed to: ${newName.trim()}`);
+              } catch (err: any) {
+                new Notice(`Rename failed: ${err?.message || err}`);
+              }
+            },
+          }).open();
+        });
+      }
+
+      // Delete button (not for main, not for current)
+      if (!isMain && !isCurrent) {
         const delBtn = right.createEl("button", { text: "✕", cls: "openclaw-picker-del" });
         delBtn.title = "Delete conversation";
         delBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
+          delBtn.textContent = "…";
+          delBtn.disabled = true;
           try {
             await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
-            this.sessions = this.sessions.filter((s: any) => s.key !== session.key);
-            this.render();
             new Notice(`Deleted: ${name}`);
           } catch (err: any) {
             new Notice(`Delete failed: ${err?.message || err}`);
           }
+          // Always re-fetch to confirm actual state
+          try {
+            const result = await this.plugin.gateway?.request("sessions.list", {});
+            this.sessions = result?.sessions || [];
+          } catch { /* keep current */ }
+          this.renderConversations();
         });
       }
 
@@ -2533,7 +2588,6 @@ class SessionPickerModal extends Modal {
             return;
           }
           const sessionKey = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-          // Switch to the new session key — session auto-creates on first message
           this.plugin.settings.sessionKey = sessionKey;
           this.chatView.messages = [];
           if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
@@ -2546,6 +2600,12 @@ class SessionPickerModal extends Modal {
         },
       }).open();
     });
+
+    // Footer
+    const footer = contentEl.createDiv("openclaw-picker-hint");
+    footer.style.marginTop = "8px";
+    footer.style.fontSize = "11px";
+    footer.textContent = "Main can't be deleted. New conversations are created when you send your first message.";
   }
 }
 
