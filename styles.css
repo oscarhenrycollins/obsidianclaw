@@ -4,28 +4,37 @@
 .openclaw-tab-bar {
   flex-shrink: 0;
   display: flex;
-  align-items: stretch;
-  gap: 3px;
-  padding: 3px 4px 0 4px;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 2px;
   margin: 0;
   overflow: hidden;
+  position: relative;
+}
+.openclaw-tab-bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.04), transparent);
+  pointer-events: none;
 }
 .openclaw-tab {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0;
-  padding: 4px 8px 0 8px;
+  gap: 3px;
+  padding: 3px 6px 2px 6px;
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--text-muted);
   transition: all 0.15s;
   background: rgba(128,128,128,0.06);
-  min-width: 32px;
-  max-width: 120px;
+  min-width: 20px;
   flex: 0 1 auto;
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
   position: relative;
   overflow: hidden;
 }
@@ -33,13 +42,6 @@
 .openclaw-tab.active {
   background: var(--background-primary);
   color: var(--text-normal);
-}
-.openclaw-tab-top {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  justify-content: center;
 }
 .openclaw-tab-label {
   font-size: 11px;
@@ -51,7 +53,7 @@
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0 1px;
   border-radius: 3px;
   transition: all 0.15s;
   flex-shrink: 0;
@@ -60,28 +62,27 @@
 .openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.25); }
 .openclaw-tab.active .openclaw-tab-close { opacity: 0.3; }
 .openclaw-tab-meter {
-  width: 100%;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 2px;
   background: transparent;
-  margin-top: 3px;
-  border-radius: 1px;
-  overflow: hidden;
 }
 .openclaw-tab-meter-fill {
   height: 100%;
-  border-radius: 1px;
   transition: width 1s ease, background 1s;
   width: 0%;
 }
 .openclaw-tab-add {
-  opacity: 0.4;
+  opacity: 0.35;
   flex: 0 0 auto;
   background: transparent;
-  padding: 4px 10px 0 10px;
-  font-size: 14px;
+  padding: 3px 7px 2px 7px;
+  font-size: 13px;
 }
 .openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
-.openclaw-tab-add .openclaw-tab-meter { visibility: hidden; }
+.openclaw-tab-add .openclaw-tab-meter { display: none; }
 
 /* Legacy context bar (hidden, used for internal tracking) */
 .openclaw-context-bar {

@@ -1496,12 +1496,11 @@ class OpenClawChatView extends ItemView {
       const isCurrent = tab.key === currentKey;
       const tabEl = this.tabBarEl.createDiv({ cls: `openclaw-tab${isCurrent ? " active" : ""}` });
 
-      // Top row: label + ×
-      const topRow = tabEl.createDiv({ cls: "openclaw-tab-top" });
-      topRow.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+      // Label + ×
+      tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
 
       // × button: Main = reset, others = close/delete
-      const closeBtn = topRow.createSpan({ text: "×", cls: "openclaw-tab-close" });
+      const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
       if (tab.key === "main") {
         closeBtn.title = "Reset main conversation";
         closeBtn.addEventListener("click", async (e) => {
