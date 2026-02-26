@@ -592,14 +592,26 @@ class OnboardingModal extends Modal {
     troubleshoot.createEl("h3", { text: "Troubleshooting" });
 
     const checks = troubleshoot.createEl("ol", { cls: "openclaw-onboard-list" });
-    checks.createEl("li").innerHTML = "Is Tailscale connected on <strong>this device</strong>? Check the Tailscale icon in your system tray / menu bar.";
-    checks.createEl("li").innerHTML = "Is the gateway running? On the gateway machine, run:";
+
+    const li1 = checks.createEl("li");
+    li1.innerHTML = "<strong>Is Tailscale connected on this device?</strong> Check the Tailscale icon in your system tray / menu bar. If it's off, turn it on.";
+
+    const li2 = checks.createEl("li");
+    li2.innerHTML = "<strong>DNS not resolving? (most common on macOS)</strong> Open the <strong>Tailscale app</strong> from your menu bar, toggle it <strong>OFF</strong>, wait 5 seconds, toggle it <strong>ON</strong>. This resets MagicDNS, which macOS sometimes loses track of.";
+
+    const li3 = checks.createEl("li");
+    li3.innerHTML = "Is the gateway running? On the gateway machine, run:";
     this.makeCopyBox(troubleshoot, "openclaw doctor --fix && openclaw gateway restart");
-    checks.createEl("li").innerHTML = "Is Tailscale Serve active? On the gateway machine, run:";
+
+    const li4 = checks.createEl("li");
+    li4.innerHTML = "Is Tailscale Serve active? On the gateway machine, run:";
     this.makeCopyBox(troubleshoot, "tailscale serve status");
     const tsHint = troubleshoot.createDiv("openclaw-onboard-hint");
     tsHint.innerHTML = "If Tailscale Serve shows nothing, set it up:";
     this.makeCopyBox(troubleshoot, "tailscale serve --bg http://127.0.0.1:18789");
+
+    const li5 = checks.createEl("li");
+    li5.innerHTML = "<strong>Still stuck?</strong> Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
