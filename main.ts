@@ -1389,9 +1389,12 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
-      // Update active tab dot color
-      const activeDot = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-dot") as HTMLElement;
-      if (activeDot) activeDot.style.background = this.contextColor(pct);
+      // Update active tab meter bar
+      const activeFill = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-meter-fill") as HTMLElement;
+      if (activeFill) {
+        activeFill.style.width = pct + "%";
+        activeFill.style.background = this.contextColor(pct);
+      }
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -1491,15 +1494,12 @@ class OpenClawChatView extends ItemView {
       const isCurrent = tab.key === currentKey;
       const tabEl = this.tabBarEl.createDiv({ cls: `openclaw-tab${isCurrent ? " active" : ""}` });
 
-      // Color dot (green → yellow → red based on context usage)
-      const dot = tabEl.createDiv({ cls: "openclaw-tab-dot" });
-      dot.style.background = this.contextColor(tab.pct);
-
-      // Label
-      tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+      // Top row: label + ×
+      const topRow = tabEl.createDiv({ cls: "openclaw-tab-top" });
+      topRow.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
 
       // × button: Main = reset, others = close/delete
-      const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
+      const closeBtn = topRow.createSpan({ text: "×", cls: "openclaw-tab-close" });
       if (tab.key === "main") {
         closeBtn.title = "Reset main conversation";
         closeBtn.addEventListener("click", async (e) => {
@@ -1528,6 +1528,12 @@ class OpenClawChatView extends ItemView {
           await this.updateContextMeter();
         });
       }
+
+      // Bottom meter bar (fills left to right)
+      const meter = tabEl.createDiv({ cls: "openclaw-tab-meter" });
+      const fill = meter.createDiv({ cls: "openclaw-tab-meter-fill" });
+      fill.style.width = tab.pct + "%";
+      fill.style.background = this.contextColor(tab.pct);
 
       // Click to switch
       if (!isCurrent) {

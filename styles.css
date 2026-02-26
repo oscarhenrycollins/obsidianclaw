@@ -4,39 +4,41 @@
 .openclaw-tab-bar {
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0;
+  align-items: stretch;
+  gap: 3px;
+  padding: 3px 4px 0 4px;
   margin: 0;
-  border-bottom: 1px solid var(--background-modifier-border);
   overflow: hidden;
 }
 .openclaw-tab {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 4px 6px;
+  gap: 0;
+  padding: 4px 8px 0 8px;
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--text-muted);
   transition: all 0.15s;
-  background: transparent;
+  background: rgba(128,128,128,0.06);
   min-width: 0;
-  flex-shrink: 1;
-  border-right: 1px solid var(--background-modifier-border);
+  flex: 1 1 0;
+  border-radius: 8px 8px 0 0;
+  position: relative;
+  overflow: hidden;
 }
-.openclaw-tab:hover { background: rgba(128,128,128,0.08); }
+.openclaw-tab:hover { background: rgba(128,128,128,0.12); }
 .openclaw-tab.active {
   background: var(--background-primary);
   color: var(--text-normal);
 }
-.openclaw-tab-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  transition: background 1s;
+.openclaw-tab-top {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  justify-content: center;
 }
 .openclaw-tab-label {
   font-size: 11px;
@@ -48,21 +50,37 @@
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  padding: 0 1px;
+  padding: 0 2px;
   border-radius: 3px;
   transition: all 0.15s;
   flex-shrink: 0;
 }
 .openclaw-tab:hover .openclaw-tab-close { opacity: 0.5; }
-.openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.2); }
+.openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.25); }
 .openclaw-tab.active .openclaw-tab-close { opacity: 0.3; }
+.openclaw-tab-meter {
+  width: 100%;
+  height: 2px;
+  background: transparent;
+  margin-top: 3px;
+  border-radius: 1px;
+  overflow: hidden;
+}
+.openclaw-tab-meter-fill {
+  height: 100%;
+  border-radius: 1px;
+  transition: width 1s ease, background 1s;
+  width: 0%;
+}
 .openclaw-tab-add {
   opacity: 0.4;
-  flex-shrink: 0;
-  border-right: none;
-  padding: 4px 8px;
+  flex: 0 0 auto;
+  background: transparent;
+  padding: 4px 10px 0 10px;
+  font-size: 14px;
 }
-.openclaw-tab-add:hover { opacity: 1; }
+.openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
+.openclaw-tab-add .openclaw-tab-meter { visibility: hidden; }
 
 /* Legacy context bar (hidden, used for internal tracking) */
 .openclaw-context-bar {
