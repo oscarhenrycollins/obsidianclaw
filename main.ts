@@ -1389,9 +1389,9 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
-      // Update active tab circle
-      const activeTab = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-circle") as HTMLCanvasElement;
-      if (activeTab) this.drawContextCircle(activeTab, pct);
+      // Update active tab dot color
+      const activeDot = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-dot") as HTMLElement;
+      if (activeDot) activeDot.style.background = this.contextColor(pct);
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -1491,11 +1491,9 @@ class OpenClawChatView extends ItemView {
       const isCurrent = tab.key === currentKey;
       const tabEl = this.tabBarEl.createDiv({ cls: `openclaw-tab${isCurrent ? " active" : ""}` });
 
-      // Context circle indicator
-      const circle = tabEl.createEl("canvas", { cls: "openclaw-tab-circle" });
-      circle.width = 16;
-      circle.height = 16;
-      this.drawContextCircle(circle, tab.pct);
+      // Color dot (green → yellow → red based on context usage)
+      const dot = tabEl.createDiv({ cls: "openclaw-tab-dot" });
+      dot.style.background = this.contextColor(tab.pct);
 
       // Label
       tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
@@ -1583,33 +1581,11 @@ class OpenClawChatView extends ItemView {
     });
   }
 
-  private drawContextCircle(canvas: HTMLCanvasElement, pct: number): void {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const size = 16;
-    const center = size / 2;
-    const radius = 5;
-    const lineWidth = 2;
-
-    ctx.clearRect(0, 0, size, size);
-
-    // Background circle
-    ctx.beginPath();
-    ctx.arc(center, center, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(128,128,128,0.2)";
-    ctx.lineWidth = lineWidth;
-    ctx.stroke();
-
-    // Fill arc
-    if (pct > 0) {
-      ctx.beginPath();
-      const start = -Math.PI / 2;
-      const end = start + (Math.PI * 2 * pct / 100);
-      ctx.arc(center, center, radius, start, end);
-      ctx.strokeStyle = pct > 80 ? "#c44" : pct > 60 ? "#d4a843" : "var(--interactive-accent)";
-      ctx.lineWidth = lineWidth;
-      ctx.stroke();
-    }
+  private contextColor(pct: number): string {
+    if (pct > 80) return "#c44";
+    if (pct > 60) return "#d4a843";
+    if (pct > 30) return "#7a7";
+    return "#5a5";
   }
 
   async resetCurrentTab(): Promise<void> {

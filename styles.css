@@ -1,60 +1,68 @@
 /* ObsidianClaw — Modern Chat UI */
 
-/* Tab bar (browser-like) */
+/* Tab bar */
 .openclaw-tab-bar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  position: relative;
+  gap: 0;
+  padding: 0;
+  margin: 0;
   border-bottom: 1px solid var(--background-modifier-border);
+  overflow: hidden;
 }
-.openclaw-tab-bar::-webkit-scrollbar { display: none; }
 .openclaw-tab {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 6px 6px 0 0;
+  gap: 3px;
+  padding: 4px 6px;
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--text-muted);
   transition: all 0.15s;
-  position: relative;
   background: transparent;
+  min-width: 0;
+  flex-shrink: 1;
+  border-right: 1px solid var(--background-modifier-border);
 }
 .openclaw-tab:hover { background: rgba(128,128,128,0.08); }
 .openclaw-tab.active {
   background: var(--background-primary);
   color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
-  border-bottom: 1px solid var(--background-primary);
-  margin-bottom: -1px;
 }
-.openclaw-tab-circle { flex-shrink: 0; }
-.openclaw-tab-label { font-size: 11px; }
+.openclaw-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 1s;
+}
+.openclaw-tab-label {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .openclaw-tab-close {
-  font-size: 13px;
+  font-size: 11px;
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  padding: 0 2px;
+  padding: 0 1px;
   border-radius: 3px;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 .openclaw-tab:hover .openclaw-tab-close { opacity: 0.5; }
 .openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.2); }
 .openclaw-tab.active .openclaw-tab-close { opacity: 0.3; }
 .openclaw-tab-add {
-  opacity: 0.5;
-  font-size: 14px;
+  opacity: 0.4;
+  flex-shrink: 0;
+  border-right: none;
+  padding: 4px 8px;
 }
 .openclaw-tab-add:hover { opacity: 1; }
-/* reset button removed — Main × does reset */
 
 /* Legacy context bar (hidden, used for internal tracking) */
 .openclaw-context-bar {
