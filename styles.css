@@ -22,8 +22,9 @@
   color: var(--text-muted);
   transition: all 0.15s;
   background: rgba(128,128,128,0.06);
-  min-width: 0;
-  flex: 1 1 0;
+  min-width: 32px;
+  max-width: 120px;
+  flex: 0 1 auto;
   border-radius: 8px 8px 0 0;
   position: relative;
   overflow: hidden;

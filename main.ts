@@ -1476,11 +1476,13 @@ class OpenClawChatView extends ItemView {
       this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
     }
 
-    // Add other sessions numbered 1, 2, 3...
+    // Add other sessions in creation order (oldest first)
+    const others = convSessions
+      .filter(s => s.key.slice(agentPrefix.length) !== "main")
+      .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0));
     let num = 1;
-    for (const s of convSessions) {
+    for (const s of others) {
       const sk = s.key.slice(agentPrefix.length);
-      if (sk === "main") continue;
       const used = s.totalTokens || 0;
       const max = s.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
