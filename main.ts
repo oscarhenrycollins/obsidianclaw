@@ -881,6 +881,7 @@ class OpenClawChatView extends ItemView {
   modelLabelEl!: HTMLElement;
   private sessionPillEl!: HTMLElement;
   currentModel: string = "";
+  currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = "";
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
@@ -1397,9 +1398,10 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
-      // Update model label from session data
+      // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
-      if (fullModel && fullModel !== this.currentModel) {
+      const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
+      if (fullModel && fullModel !== this.currentModel && !modelCooldown) {
         this.currentModel = fullModel;
         this.updateModelPill();
       }
@@ -2544,7 +2546,8 @@ class SessionPickerModal extends Modal {
           } catch (err: any) {
             new Notice(`Delete failed: ${err?.message || err}`);
           }
-          // Always re-fetch to confirm actual state
+          // Small delay to let gateway process, then re-fetch to confirm
+          await new Promise(r => setTimeout(r, 500));
           try {
             const result = await this.plugin.gateway?.request("sessions.list", {});
             this.sessions = result?.sessions || [];
@@ -2625,8 +2628,20 @@ class ModelPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
     try {
-      const result = await this.plugin.gateway?.request("models.list", {});
-      this.models = result?.models || [];
+      const [modelsResult, sessionsResult] = await Promise.all([
+        this.plugin.gateway?.request("models.list", {}),
+        this.plugin.gateway?.request("sessions.list", {}),
+      ]);
+      this.models = modelsResult?.models || [];
+      // Get fresh current model from gateway
+      const sk = this.plugin.settings.sessionKey || "main";
+      const sessions = sessionsResult?.sessions || [];
+      const session = sessions.find((s: any) => s.key === sk) ||
+        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
+        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
+      if (session?.model) {
+        this.chatView.currentModel = session.model;
+      }
     } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
@@ -2720,6 +2735,7 @@ class ModelPickerModal extends Modal {
             idempotencyKey: "model-" + Date.now(),
           });
           this.chatView.currentModel = fullId;
+          this.chatView.currentModelSetAt = Date.now();
           this.chatView.updateModelPill();
           new Notice(`Model: ${m.name || m.id}`);
           this.close();
