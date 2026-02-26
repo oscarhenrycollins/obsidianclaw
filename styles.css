@@ -25,6 +25,7 @@
   background: rgba(128,128,128,0.06);
   min-width: 0;
   flex: 1 1 0;
+  max-width: 33.33%;
   border-radius: 8px 8px 0 0;
   position: relative;
   overflow: hidden;
