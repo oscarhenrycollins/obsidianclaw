@@ -621,10 +621,11 @@ class OnboardingModal extends Modal {
       troubleshoot.style.display = "none";
       this.showStatus("Testing connection...", "info");
 
-      // Save the normalized URL (wss:// or ws://)
+      // Always reset to "main" session to ensure clean connection
       urlInput.value = normalizedUrl;
       this.plugin.settings.gatewayUrl = normalizedUrl;
       this.plugin.settings.token = token;
+      this.plugin.settings.sessionKey = "main";
       await this.plugin.saveSettings();
 
       const ok = await new Promise<boolean>((resolve) => {
