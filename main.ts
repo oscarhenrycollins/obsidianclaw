@@ -611,7 +611,22 @@ class OnboardingModal extends Modal {
     this.makeCopyBox(troubleshoot, "tailscale serve --bg http://127.0.0.1:18789");
 
     const li5 = checks.createEl("li");
-    li5.innerHTML = "<strong>Still stuck?</strong> Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.";
+    li5.innerHTML = "<strong>Gateway config broken?</strong> If <code>openclaw doctor</code> shows \"Invalid config\" errors, your gateway config file may have been corrupted. To reset to the recommended setup, run these on the gateway machine:";
+    this.makeCopyBox(troubleshoot, `cat ~/.openclaw/openclaw.json | python3 -c "
+import json, sys
+c = json.load(sys.stdin)
+c.setdefault('gateway', {})['bind'] = 'loopback'
+c['gateway'].setdefault('tailscale', {})['mode'] = 'serve'
+c['gateway']['tailscale']['resetOnExit'] = False
+json.dump(c, open(sys.argv[1], 'w'), indent=2)
+print('Config fixed: bind=loopback, tailscale.mode=serve')
+" ~/.openclaw/openclaw.json`);
+    const li5hint = troubleshoot.createDiv("openclaw-onboard-hint");
+    li5hint.innerHTML = "Then restart the gateway and re-enable Tailscale Serve:";
+    this.makeCopyBox(troubleshoot, "openclaw gateway restart && tailscale serve --bg http://127.0.0.1:18789");
+
+    const li6 = checks.createEl("li");
+    li6.innerHTML = "<strong>Still stuck?</strong> Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
