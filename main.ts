@@ -2351,12 +2351,8 @@ class SessionPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading...";
 
     try {
-      const [agentResult, sessionResult] = await Promise.all([
-        this.plugin.gateway?.request("agents.list", {}),
-        this.plugin.gateway?.request("sessions.list", {}),
-      ]);
-      this.assistantName = agentResult?.defaultId || "main";
-      this.sessions = sessionResult?.sessions || [];
+      const result = await this.plugin.gateway?.request("sessions.list", {});
+      this.sessions = result?.sessions || [];
     } catch { this.sessions = []; }
 
     this.render();
@@ -2525,20 +2521,8 @@ class ModelPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
     try {
-      const [modelsResult, sessionsResult] = await Promise.all([
-        this.plugin.gateway?.request("models.list", {}),
-        this.plugin.gateway?.request("sessions.list", {}),
-      ]);
-      this.models = modelsResult?.models || [];
-      // Get fresh current model from gateway session data
-      const sk = this.plugin.settings.sessionKey || "main";
-      const sessions = sessionsResult?.sessions || [];
-      const session = sessions.find((s: any) => s.key === sk) ||
-        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
-        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
-      if (session?.model) {
-        this.chatView.currentModel = session.model;
-      }
+      const result = await this.plugin.gateway?.request("models.list", {});
+      this.models = result?.models || [];
     } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
