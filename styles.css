@@ -6,80 +6,83 @@
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  padding: 0 2px;
+  padding: 0 3px;
   margin: 0;
   overflow: hidden;
-  position: relative;
-}
-.openclaw-tab-bar::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 6px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.04), transparent);
-  pointer-events: none;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 .openclaw-tab {
   display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 6px 2px 6px;
-  font-size: 11px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 6px 10px 0 10px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   color: var(--text-muted);
   transition: all 0.15s;
   background: rgba(128,128,128,0.06);
-  min-width: 20px;
+  min-width: 28px;
   flex: 0 1 auto;
-  border-radius: 6px 6px 0 0;
+  border-radius: 8px 8px 0 0;
   position: relative;
-  overflow: hidden;
 }
 .openclaw-tab:hover { background: rgba(128,128,128,0.12); }
 .openclaw-tab.active {
   background: var(--background-primary);
   color: var(--text-normal);
+  margin-bottom: -1px;
+  padding-bottom: 1px;
+}
+.openclaw-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  justify-content: center;
 }
 .openclaw-tab-label {
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .openclaw-tab-close {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   opacity: 0;
   cursor: pointer;
-  padding: 0 1px;
-  border-radius: 3px;
+  padding: 2px 3px;
+  border-radius: 4px;
   transition: all 0.15s;
   flex-shrink: 0;
 }
-.openclaw-tab:hover .openclaw-tab-close { opacity: 0.5; }
+.openclaw-tab:hover .openclaw-tab-close { opacity: 0.4; }
 .openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.25); }
 .openclaw-tab.active .openclaw-tab-close { opacity: 0.3; }
 .openclaw-tab-meter {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
+  width: 100%;
+  height: 3px;
+  background: rgba(128,128,128,0.15);
+  border-radius: 1.5px;
+  overflow: hidden;
+  margin-top: 4px;
+  margin-bottom: 3px;
 }
 .openclaw-tab-meter-fill {
   height: 100%;
-  transition: width 1s ease, background 1s;
+  border-radius: 1.5px;
+  background: var(--text-normal);
+  opacity: 0.6;
+  transition: width 1s ease;
   width: 0%;
 }
 .openclaw-tab-add {
   opacity: 0.35;
   flex: 0 0 auto;
   background: transparent;
-  padding: 3px 7px 2px 7px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 8px 8px 0 0;
 }
 .openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
 .openclaw-tab-add .openclaw-tab-meter { display: none; }

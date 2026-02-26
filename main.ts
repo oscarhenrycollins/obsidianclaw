@@ -1391,10 +1391,7 @@ class OpenClawChatView extends ItemView {
       this.contextLabelEl.textContent = `${pct}%`;
       // Update active tab meter bar
       const activeFill = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-meter-fill") as HTMLElement;
-      if (activeFill) {
-        activeFill.style.width = pct + "%";
-        activeFill.style.background = this.contextColor(pct);
-      }
+      if (activeFill) activeFill.style.width = pct + "%";
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -1496,11 +1493,12 @@ class OpenClawChatView extends ItemView {
       const isCurrent = tab.key === currentKey;
       const tabEl = this.tabBarEl.createDiv({ cls: `openclaw-tab${isCurrent ? " active" : ""}` });
 
-      // Label + ×
-      tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+      // Row: label + ×
+      const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
+      row.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
 
       // × button: Main = reset, others = close/delete
-      const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
+      const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
       if (tab.key === "main") {
         closeBtn.title = "Reset main conversation";
         closeBtn.addEventListener("click", async (e) => {
@@ -1530,11 +1528,10 @@ class OpenClawChatView extends ItemView {
         });
       }
 
-      // Bottom meter bar (fills left to right)
+      // Progress bar (gray container, black fill)
       const meter = tabEl.createDiv({ cls: "openclaw-tab-meter" });
       const fill = meter.createDiv({ cls: "openclaw-tab-meter-fill" });
       fill.style.width = tab.pct + "%";
-      fill.style.background = this.contextColor(tab.pct);
 
       // Click to switch
       if (!isCurrent) {
