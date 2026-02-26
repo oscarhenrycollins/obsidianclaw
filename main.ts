@@ -859,6 +859,8 @@ const VIEW_TYPE = "openclaw-chat";
 class OpenClawChatView extends ItemView {
   plugin: OpenClawPlugin;
   private messagesEl!: HTMLElement;
+  private tabBarEl!: HTMLElement;
+  private tabSessions: { key: string; label: string; pct: number }[] = [];
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private reconnectBtn!: HTMLButtonElement;
@@ -920,30 +922,24 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
-    // Context bar (all on one line): [chat ▾] [═══░░░] 42% [Compact]
-    const contextBar = container.createDiv("openclaw-context-bar");
+    // Tab bar (browser-like tabs)
+    this.tabBarEl = container.createDiv("openclaw-tab-bar");
+    this.tabBarEl.addEventListener("wheel", (e) => { e.preventDefault(); this.tabBarEl.scrollLeft += e.deltaY; }, { passive: false });
 
-    // Chat pill (session picker)
-    this.sessionPillEl = contextBar.createDiv({ cls: "openclaw-ctx-pill" });
-    this.sessionPillEl.title = "Switch chat";
-    this.sessionPillEl.addEventListener("click", () => this.openSessionPicker());
-    this.updateSessionPill();
+    // Reset button (right side of tab bar)
+    const resetBtn = container.createEl("button", { cls: "openclaw-tab-reset" });
+    resetBtn.textContent = "↻";
+    resetBtn.title = "Reset current tab (clear conversation)";
+    resetBtn.addEventListener("click", () => this.resetCurrentTab());
 
-    // Meter bar
-    this.contextMeterEl = contextBar.createDiv("openclaw-context-meter");
-    this.contextFillEl = this.contextMeterEl.createDiv("openclaw-context-fill");
+    // We'll render tabs after loading sessions
+    this.renderTabs();
 
-    // Percentage label
-    this.contextLabelEl = contextBar.createSpan("openclaw-context-label");
-    this.contextLabelEl.textContent = "";
-
-    // Compact button
-    const compactBtn = contextBar.createEl("button", { cls: "openclaw-context-btn" });
-    compactBtn.textContent = "Compact";
-    compactBtn.title = "Summarize chat to free context space";
-    compactBtn.addEventListener("click", () => this.compactSession());
-
-    // Hidden model label (internal tracking only)
+    // Hidden elements for compatibility
+    this.sessionPillEl = createDiv();
+    this.contextMeterEl = createDiv();
+    this.contextFillEl = createDiv();
+    this.contextLabelEl = document.createElement("span");
     this.modelLabelEl = createDiv();
 
     // Status banner (compaction, etc.) — hidden by default
@@ -1399,6 +1395,9 @@ class OpenClawChatView extends ItemView {
       this.contextFillEl.style.width = pct + "%";
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
+      // Update active tab circle
+      const activeTab = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-circle") as HTMLCanvasElement;
+      if (activeTab) this.drawContextCircle(activeTab, pct);
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -1444,6 +1443,193 @@ class OpenClawChatView extends ItemView {
 
   openSessionPicker(): void {
     new SessionPickerModal(this.app, this.plugin, this).open();
+  }
+
+  async renderTabs(): Promise<void> {
+    if (!this.tabBarEl) return;
+    this.tabBarEl.empty();
+    const currentKey = this.plugin.settings.sessionKey || "main";
+
+    // Fetch sessions from gateway
+    let sessions: any[] = [];
+    if (this.plugin.gateway?.connected) {
+      try {
+        const result = await this.plugin.gateway.request("sessions.list", {});
+        sessions = result?.sessions || [];
+      } catch { /* use empty */ }
+    }
+
+    // Filter to direct conversations only
+    const channelPfx = ["telegram:", "discord:", "whatsapp:", "signal:", "webchat:", "slack:", "irc:", "subag"];
+    const agentPrefix = "agent:main:";
+    const convSessions = sessions.filter(s => {
+      if (!s.key.startsWith(agentPrefix) || s.key.includes(":cron:")) return false;
+      const sk = s.key.slice(agentPrefix.length);
+      return !channelPfx.some(p => sk.startsWith(p));
+    });
+
+    // Build tab list — ensure "main" is always first
+    this.tabSessions = [];
+    const mainSession = convSessions.find(s => s.key === "agent:main:main");
+    if (mainSession) {
+      const used = mainSession.totalTokens || 0;
+      const max = mainSession.contextTokens || 200000;
+      this.tabSessions.push({ key: "main", label: "Main", pct: Math.min(100, Math.round((used / max) * 100)) });
+    } else {
+      this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
+    }
+
+    // Add other sessions numbered 1, 2, 3...
+    let num = 1;
+    for (const s of convSessions) {
+      const sk = s.key.slice(agentPrefix.length);
+      if (sk === "main") continue;
+      const used = s.totalTokens || 0;
+      const max = s.contextTokens || 200000;
+      const pct = Math.min(100, Math.round((used / max) * 100));
+      const label = s.label || s.displayName || String(num);
+      this.tabSessions.push({ key: sk, label, pct });
+      num++;
+    }
+
+    // Render each tab
+    for (const tab of this.tabSessions) {
+      const isCurrent = tab.key === currentKey;
+      const tabEl = this.tabBarEl.createDiv({ cls: `openclaw-tab${isCurrent ? " active" : ""}` });
+
+      // Context circle indicator
+      const circle = tabEl.createEl("canvas", { cls: "openclaw-tab-circle" });
+      circle.width = 16;
+      circle.height = 16;
+      this.drawContextCircle(circle, tab.pct);
+
+      // Label
+      tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+
+      // Close button (not for main)
+      if (tab.key !== "main") {
+        const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
+        closeBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          try {
+            await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
+            new Notice(`Closed: ${tab.label}`);
+          } catch (err: any) {
+            new Notice(`Close failed: ${err?.message || err}`);
+          }
+          // Switch to main if we closed the active tab
+          if (tab.key === currentKey) {
+            this.plugin.settings.sessionKey = "main";
+            await this.plugin.saveSettings();
+            this.messages = [];
+            this.messagesEl.empty();
+            await this.loadHistory();
+          }
+          await this.renderTabs();
+          await this.updateContextMeter();
+        });
+      }
+
+      // Click to switch
+      if (!isCurrent) {
+        tabEl.addEventListener("click", async () => {
+          this.plugin.settings.sessionKey = tab.key;
+          await this.plugin.saveSettings();
+          this.messages = [];
+          this.messagesEl.empty();
+          this.cachedSessionDisplayName = tab.label;
+          await this.loadHistory();
+          await this.updateContextMeter();
+          this.renderTabs();
+        });
+      }
+    }
+
+    // + button to add new tab
+    const addBtn = this.tabBarEl.createDiv({ cls: "openclaw-tab openclaw-tab-add" });
+    addBtn.createSpan({ text: "+", cls: "openclaw-tab-label" });
+    addBtn.addEventListener("click", async () => {
+      // Auto-name: find next number
+      const nums = this.tabSessions.map(t => parseInt(t.label)).filter(n => !isNaN(n));
+      const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+      const sessionKey = `tab-${nextNum}`;
+      try {
+        await this.plugin.gateway?.request("chat.send", {
+          sessionKey: sessionKey,
+          message: "/new",
+          deliver: false,
+          idempotencyKey: "newtab-" + Date.now(),
+        });
+        await new Promise(r => setTimeout(r, 500));
+        try {
+          await this.plugin.gateway?.request("sessions.patch", {
+            key: `agent:main:${sessionKey}`,
+            label: String(nextNum),
+          });
+        } catch { /* label optional */ }
+        // Switch to it
+        this.plugin.settings.sessionKey = sessionKey;
+        this.messages = [];
+        if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+        await this.plugin.saveSettings();
+        this.messagesEl.empty();
+        await this.renderTabs();
+        await this.updateContextMeter();
+        new Notice(`New tab: ${nextNum}`);
+      } catch (err: any) {
+        new Notice(`Failed to create tab: ${err?.message || err}`);
+      }
+    });
+  }
+
+  private drawContextCircle(canvas: HTMLCanvasElement, pct: number): void {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const size = 16;
+    const center = size / 2;
+    const radius = 5;
+    const lineWidth = 2;
+
+    ctx.clearRect(0, 0, size, size);
+
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(center, center, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(128,128,128,0.2)";
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+
+    // Fill arc
+    if (pct > 0) {
+      ctx.beginPath();
+      const start = -Math.PI / 2;
+      const end = start + (Math.PI * 2 * pct / 100);
+      ctx.arc(center, center, radius, start, end);
+      ctx.strokeStyle = pct > 80 ? "#c44" : pct > 60 ? "#d4a843" : "var(--interactive-accent)";
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+    }
+  }
+
+  async resetCurrentTab(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: this.plugin.settings.sessionKey,
+        message: "/reset",
+        deliver: false,
+        idempotencyKey: "reset-" + Date.now(),
+      });
+      this.messages = [];
+      if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+      await this.plugin.saveSettings();
+      this.messagesEl.empty();
+      await this.updateContextMeter();
+      await this.renderTabs();
+      new Notice("Tab reset");
+    } catch (e) {
+      new Notice(`Reset failed: ${e}`);
+    }
   }
 
   openModelPicker(): void {
@@ -2300,6 +2486,7 @@ export default class OpenClawPlugin extends Plugin {
         this.gatewayConnected = true;
         this.chatView?.updateStatus();
         this.chatView?.loadHistory();
+        this.chatView?.renderTabs();
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
           this.chatView.currentModel = this.settings.currentModel;

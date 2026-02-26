@@ -1,23 +1,78 @@
 /* ObsidianClaw — Modern Chat UI */
 
-/* Context bar (single line) */
-.openclaw-context-bar {
+/* Tab bar (browser-like) */
+.openclaw-tab-bar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0px 6px 3px 6px;
+  gap: 2px;
+  padding: 4px 30px 4px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
   position: relative;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
-.openclaw-context-bar::after {
-  content: '';
+.openclaw-tab-bar::-webkit-scrollbar { display: none; }
+.openclaw-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px 6px 0 0;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  position: relative;
+  background: transparent;
+}
+.openclaw-tab:hover { background: rgba(128,128,128,0.08); }
+.openclaw-tab.active {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-primary);
+  margin-bottom: -1px;
+}
+.openclaw-tab-circle { flex-shrink: 0; }
+.openclaw-tab-label { font-size: 11px; }
+.openclaw-tab-close {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+.openclaw-tab:hover .openclaw-tab-close { opacity: 0.5; }
+.openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.2); }
+.openclaw-tab-add {
+  opacity: 0.5;
+  font-size: 14px;
+}
+.openclaw-tab-add:hover { opacity: 1; }
+.openclaw-tab-reset {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
-  pointer-events: none;
+  top: 4px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 4px;
+  z-index: 1;
+  transition: all 0.15s;
+}
+.openclaw-tab-reset:hover { background: rgba(128,128,128,0.15); color: var(--text-normal); }
+
+/* Legacy context bar (hidden, used for internal tracking) */
+.openclaw-context-bar {
+  display: none;
 }
 .openclaw-model-label {
   font-size: 9px;
