@@ -926,12 +926,6 @@ class OpenClawChatView extends ItemView {
     this.tabBarEl = container.createDiv("openclaw-tab-bar");
     this.tabBarEl.addEventListener("wheel", (e) => { e.preventDefault(); this.tabBarEl.scrollLeft += e.deltaY; }, { passive: false });
 
-    // Reset button (right side of tab bar)
-    const resetBtn = container.createEl("button", { cls: "openclaw-tab-reset" });
-    resetBtn.textContent = "↻";
-    resetBtn.title = "Reset current tab (clear conversation)";
-    resetBtn.addEventListener("click", () => this.resetCurrentTab());
-
     // We'll render tabs after loading sessions
     this.renderTabs();
 
@@ -1506,9 +1500,16 @@ class OpenClawChatView extends ItemView {
       // Label
       tabEl.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
 
-      // Close button (not for main)
-      if (tab.key !== "main") {
-        const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
+      // × button: Main = reset, others = close/delete
+      const closeBtn = tabEl.createSpan({ text: "×", cls: "openclaw-tab-close" });
+      if (tab.key === "main") {
+        closeBtn.title = "Reset main conversation";
+        closeBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          await this.resetCurrentTab();
+        });
+      } else {
+        closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {

@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px 30px 4px 6px;
+  padding: 4px 6px;
   overflow-x: auto;
   scrollbar-width: none;
   position: relative;
@@ -48,27 +48,13 @@
 }
 .openclaw-tab:hover .openclaw-tab-close { opacity: 0.5; }
 .openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.2); }
+.openclaw-tab.active .openclaw-tab-close { opacity: 0.3; }
 .openclaw-tab-add {
   opacity: 0.5;
   font-size: 14px;
 }
 .openclaw-tab-add:hover { opacity: 1; }
-.openclaw-tab-reset {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  border-radius: 4px;
-  z-index: 1;
-  transition: all 0.15s;
-}
-.openclaw-tab-reset:hover { background: rgba(128,128,128,0.15); color: var(--text-normal); }
+/* reset button removed — Main × does reset */
 
 /* Legacy context bar (hidden, used for internal tracking) */
 .openclaw-context-bar {
