@@ -20,6 +20,7 @@ interface OpenClawSettings {
   gatewayUrl: string;
   token: string;
   sessionKey: string;
+  currentModel?: string;  // persisted model selection (provider/model format)
   onboardingComplete: boolean;
   deviceId?: string;
   devicePublicKey?: string;
@@ -2299,6 +2300,11 @@ export default class OpenClawPlugin extends Plugin {
         this.gatewayConnected = true;
         this.chatView?.updateStatus();
         this.chatView?.loadHistory();
+        // Restore persisted model selection
+        if (this.settings.currentModel && this.chatView) {
+          this.chatView.currentModel = this.settings.currentModel;
+          this.chatView.updateModelPill();
+        }
       },
       onClose: (info) => {
         this.gatewayConnected = false;
@@ -2471,9 +2477,15 @@ class SessionPickerModal extends Modal {
       (this.app as any).setting?.openTabById?.("openclaw");
     });
 
-    const conversations = this.sessions.filter((s: any) =>
-      s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")
-    );
+    const channelPrefixes = ["telegram:", "discord:", "whatsapp:", "signal:", "webchat:", "slack:", "irc:", "subag"];
+    const conversations = this.sessions.filter((s: any) => {
+      if (!s.key.startsWith(agentPrefix)) return false;
+      if (s.key.includes(":cron:")) return false;
+      const shortKey = s.key.slice(agentPrefix.length);
+      // Exclude channel-wrapped sessions (e.g. agent:main:telegram:slash:123)
+      if (channelPrefixes.some(p => shortKey.startsWith(p))) return false;
+      return true;
+    });
 
     const list = contentEl.createDiv("openclaw-picker-list");
 
@@ -2628,20 +2640,8 @@ class ModelPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
     try {
-      const [modelsResult, sessionsResult] = await Promise.all([
-        this.plugin.gateway?.request("models.list", {}),
-        this.plugin.gateway?.request("sessions.list", {}),
-      ]);
-      this.models = modelsResult?.models || [];
-      // Get fresh current model from gateway
-      const sk = this.plugin.settings.sessionKey || "main";
-      const sessions = sessionsResult?.sessions || [];
-      const session = sessions.find((s: any) => s.key === sk) ||
-        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
-        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
-      if (session?.model) {
-        this.chatView.currentModel = session.model;
-      }
+      const result = await this.plugin.gateway?.request("models.list", {});
+      this.models = result?.models || [];
     } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
@@ -2736,6 +2736,8 @@ class ModelPickerModal extends Modal {
           });
           this.chatView.currentModel = fullId;
           this.chatView.currentModelSetAt = Date.now();
+          this.plugin.settings.currentModel = fullId;
+          await this.plugin.saveSettings();
           this.chatView.updateModelPill();
           new Notice(`Model: ${m.name || m.id}`);
           this.close();
