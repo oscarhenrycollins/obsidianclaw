@@ -96,6 +96,35 @@
 .openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
 .openclaw-tab-add .openclaw-tab-meter { display: none; }
 
+/* Sub-agent tabs */
+.openclaw-tab-subagent {
+  opacity: 0.55;
+  font-style: italic;
+  border-left: 2px solid rgba(128, 128, 128, 0.3);
+}
+.openclaw-tab-subagent.active {
+  opacity: 0.7;
+  border-left: 2px solid rgba(128, 128, 128, 0.5);
+}
+.openclaw-tab-subagent .openclaw-tab-label {
+  font-size: 11px;
+}
+.openclaw-tab-subagent .openclaw-tab-meter-fill {
+  background: rgba(128, 128, 128, 0.3);
+}
+
+/* Sub-agent view banner */
+.openclaw-subagent-banner {
+  text-align: center;
+  padding: 8px 12px;
+  margin: 8px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 8px;
+  font-style: italic;
+}
+
 /* Legacy context bar (hidden, used for internal tracking) */
 .openclaw-context-bar {
   display: none;
