@@ -896,17 +896,28 @@ class OpenClawChatView extends ItemView {
   private abortBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private messages: ChatMessage[] = [];
-  private streamText: string | null = null;
-  private streamRunId: string | null = null;
-  private compactTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastDeltaTime: number = 0;
-  private workingTimer: ReturnType<typeof setTimeout> | null = null;
-  private currentToolCalls: string[] = [];
-  /** Ordered list of stream items (tool calls) for re-rendering after loadHistory */
-  private streamItems: StreamItem[] = [];
 
-  private streamSplitPoints: number[] = []; // character positions where tool calls interrupted text
+  // ─── Per-session stream state ──────────────────────────────────────
+  private streams = new Map<string, {
+    runId: string;
+    text: string | null;
+    toolCalls: string[];
+    items: StreamItem[];
+    splitPoints: number[];
+    lastDeltaTime: number;
+    compactTimer: ReturnType<typeof setTimeout> | null;
+    workingTimer: ReturnType<typeof setTimeout> | null;
+  }>();
+  /** Map runId -> sessionKey so we can route stream events that lack sessionKey */
+  private runToSession = new Map<string, string>();
+
   private streamEl: HTMLElement | null = null;
+
+  /** Get current active session key */
+  private get activeSessionKey(): string { return this.plugin.settings.sessionKey || "main"; }
+  /** Get stream state for active tab (if any) */
+  private get activeStream() { return this.streams.get(this.activeSessionKey) ?? null; }
+
   private contextMeterEl!: HTMLElement;
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
@@ -1285,8 +1296,19 @@ class OpenClawChatView extends ItemView {
 
     // Send to gateway
     const runId = generateId();
-    this.streamRunId = runId;
-    this.streamText = "";
+    const sendSessionKey = this.activeSessionKey;
+    const ss = {
+      runId,
+      text: "" as string | null,
+      toolCalls: [] as string[],
+      items: [] as StreamItem[],
+      splitPoints: [] as number[],
+      lastDeltaTime: 0,
+      compactTimer: null as ReturnType<typeof setTimeout> | null,
+      workingTimer: null as ReturnType<typeof setTimeout> | null,
+    };
+    this.streams.set(sendSessionKey, ss);
+    this.runToSession.set(runId, sendSessionKey);
     this.abortBtn.style.display = "";
     this.typingEl.style.display = "";
     const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
@@ -1295,15 +1317,15 @@ class OpenClawChatView extends ItemView {
 
     try {
       await this.plugin.gateway.request("chat.send", {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: sendSessionKey,
         message: marker,
         deliver: false,
         idempotencyKey: runId,
       });
     } catch (e) {
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
-      this.streamRunId = null;
-      this.streamText = null;
+      this.streams.delete(sendSessionKey);
+      this.runToSession.delete(runId);
       this.abortBtn.style.display = "none";
       await this.renderMessages();
     }
@@ -1353,26 +1375,44 @@ class OpenClawChatView extends ItemView {
     await this.renderMessages();
 
     const runId = generateId();
-    this.streamRunId = runId;
-    this.streamText = "";
+    const sendSessionKey = this.activeSessionKey;
+
+    // Create per-session stream state
+    const ss = {
+      runId,
+      text: "" as string | null,
+      toolCalls: [] as string[],
+      items: [] as StreamItem[],
+      splitPoints: [] as number[],
+      lastDeltaTime: 0,
+      compactTimer: null as ReturnType<typeof setTimeout> | null,
+      workingTimer: null as ReturnType<typeof setTimeout> | null,
+    };
+    this.streams.set(sendSessionKey, ss);
+    this.runToSession.set(runId, sendSessionKey);
+
+    // Show UI for active tab
     this.abortBtn.style.display = "";
     this.typingEl.style.display = "";
-    // Update thinking text and show immediately
     const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
     if (thinkText) thinkText.textContent = "Thinking";
     this.scrollToBottom();
 
     // Fallback: if no events at all after 15s, show generic status
-    this.compactTimer = setTimeout(() => {
-      if (this.streamRunId === runId && !this.streamText) {
-        const tt = this.typingEl.querySelector(".openclaw-typing-text");
-        if (tt && tt.textContent === "Thinking") tt.textContent = "Still thinking";
+    ss.compactTimer = setTimeout(() => {
+      const current = this.streams.get(sendSessionKey);
+      if (current?.runId === runId && !current.text) {
+        // Only update DOM if this session is still active tab
+        if (this.activeSessionKey === sendSessionKey) {
+          const tt = this.typingEl.querySelector(".openclaw-typing-text");
+          if (tt && tt.textContent === "Thinking") tt.textContent = "Still thinking";
+        }
       }
     }, 15000);
 
     try {
       const sendParams: any = {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: sendSessionKey,
         message: fullMessage,
         deliver: false,
         idempotencyKey: runId,
@@ -1382,10 +1422,10 @@ class OpenClawChatView extends ItemView {
       }
       await this.plugin.gateway.request("chat.send", sendParams);
     } catch (e) {
-      if (this.compactTimer) clearTimeout(this.compactTimer);
+      if (ss.compactTimer) clearTimeout(ss.compactTimer);
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
-      this.streamRunId = null;
-      this.streamText = null;
+      this.streams.delete(sendSessionKey);
+      this.runToSession.delete(runId);
       this.abortBtn.style.display = "none";
       await this.renderMessages();
     } finally {
@@ -1395,11 +1435,12 @@ class OpenClawChatView extends ItemView {
   }
 
   async abortMessage(): Promise<void> {
-    if (!this.plugin.gateway?.connected || !this.streamRunId) return;
+    const ss = this.activeStream;
+    if (!this.plugin.gateway?.connected || !ss) return;
     try {
       await this.plugin.gateway.request("chat.abort", {
-        sessionKey: this.plugin.settings.sessionKey,
-        runId: this.streamRunId,
+        sessionKey: this.activeSessionKey,
+        runId: ss.runId,
       });
     } catch {
       // ignore
@@ -1571,6 +1612,8 @@ class OpenClawChatView extends ItemView {
           } catch (err: any) {
             new Notice(`Close failed: ${err?.message || err}`);
           }
+          // Clean up any stream state for the deleted tab
+          this.finishStream(tab.key);
           // Switch to main if we closed the active tab
           if (tab.key === currentKey) {
             this.plugin.settings.sessionKey = "main";
@@ -1578,6 +1621,7 @@ class OpenClawChatView extends ItemView {
             this.messages = [];
             this.messagesEl.empty();
             await this.loadHistory();
+            this.restoreStreamUI();
           }
           this.tabDeleteInProgress = false;
           await this.renderTabs();
@@ -1593,12 +1637,22 @@ class OpenClawChatView extends ItemView {
       // Click to switch
       if (!isCurrent) {
         tabEl.addEventListener("click", async () => {
+          // Clear DOM from old tab
+          this.streamEl = null;
+          this.typingEl.style.display = "none";
+          this.abortBtn.style.display = "none";
+          this.hideBanner();
+
           this.plugin.settings.sessionKey = tab.key;
           await this.plugin.saveSettings();
           this.messages = [];
           this.messagesEl.empty();
           this.cachedSessionDisplayName = tab.label;
           await this.loadHistory();
+
+          // Restore stream UI if new tab has an active stream
+          this.restoreStreamUI();
+
           await this.updateContextMeter();
           this.renderTabs();
           this.updateStatus();
@@ -1628,7 +1682,12 @@ class OpenClawChatView extends ItemView {
             label: String(nextNum),
           });
         } catch { /* label optional */ }
-        // Switch to it
+        // Switch to it - clear old tab's stream UI
+        this.streamEl = null;
+        this.typingEl.style.display = "none";
+        this.abortBtn.style.display = "none";
+        this.hideBanner();
+
         this.plugin.settings.sessionKey = sessionKey;
         this.messages = [];
         if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
@@ -1984,173 +2043,252 @@ class OpenClawChatView extends ItemView {
     this.bannerEl.style.display = "none";
   }
 
+  /** Resolve which session a stream/agent event belongs to */
+  private resolveStreamSession(payload: any): string | null {
+    // Try sessionKey on payload first
+    const sk = payload.sessionKey ?? "";
+    if (sk) {
+      // Normalize: strip agent:main: prefix
+      const prefix = "agent:main:";
+      const normalized = sk.startsWith(prefix) ? sk.slice(prefix.length) : sk;
+      if (this.streams.has(normalized)) return normalized;
+    }
+    // Fall back to runId mapping
+    const runId = payload.runId || payload.data?.runId || "";
+    if (runId && this.runToSession.has(runId)) return this.runToSession.get(runId)!;
+    // Last resort: if only one stream is active, use that
+    if (this.streams.size === 1) return this.streams.keys().next().value!;
+    return null;
+  }
+
   handleStreamEvent(payload: any): void {
     const stream = payload.stream || "";
     const state = payload.state || "";
 
-    // Compaction can arrive without an active stream (before user message gets processed)
-    if (!this.streamRunId) {
+    const sessionKey = this.resolveStreamSession(payload);
+    const isActiveTab = sessionKey === this.activeSessionKey;
+
+    // Compaction can arrive without an active stream
+    if (!sessionKey || !this.streams.has(sessionKey)) {
       if (stream === "compaction" || state === "compacting") {
         const cPhase = payload.data?.phase || "";
-        if (cPhase === "end") {
-          setTimeout(() => this.hideBanner(), 2000);
-        } else {
-          this.showBanner("Compacting context...");
+        if (isActiveTab || !sessionKey) {
+          if (cPhase === "end") {
+            setTimeout(() => this.hideBanner(), 2000);
+          } else {
+            this.showBanner("Compacting context...");
+          }
         }
       }
-
       return;
     }
 
+    const ss = this.streams.get(sessionKey)!;
     const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-    if (!typingText) return;
 
     // Agent "assistant" events = agent is actively working
     if (state === "assistant") {
-      const timeSinceDelta = Date.now() - this.lastDeltaTime;
-      if (this.streamText && timeSinceDelta > 1500 && this.typingEl.style.display === "none") {
-        if (!this.workingTimer) {
-          this.workingTimer = setTimeout(() => {
-            if (this.streamRunId && this.typingEl.style.display === "none") {
-              typingText.textContent = "Working";
-              this.typingEl.style.display = "";
+      const timeSinceDelta = Date.now() - ss.lastDeltaTime;
+      if (ss.text && timeSinceDelta > 1500) {
+        if (!ss.workingTimer) {
+          ss.workingTimer = setTimeout(() => {
+            if (this.streams.has(sessionKey)) {
+              if (isActiveTab && this.typingEl.style.display === "none") {
+                if (typingText) typingText.textContent = "Working";
+                this.typingEl.style.display = "";
+              }
             }
-            this.workingTimer = null;
+            ss.workingTimer = null;
           }, 500);
         }
-      } else if (!this.streamText && !this.lastDeltaTime) {
+      } else if (!ss.text && !ss.lastDeltaTime && isActiveTab) {
         this.typingEl.style.display = "";
       }
     } else if (state === "lifecycle") {
-      if (!this.streamText) {
+      if (!ss.text && isActiveTab && typingText) {
         typingText.textContent = "Thinking";
         this.typingEl.style.display = "";
       }
     }
 
-    // Handle explicit tool events (persistent in chat + typing indicator)
+    // Handle explicit tool events
     const toolName = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
     const phase = payload.data?.phase || payload.phase || "";
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
-      if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
-      if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      // Record position for interleaving
-      if (this.streamText) {
-        this.streamSplitPoints.push(this.streamText.length);
+      if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
+      if (ss.workingTimer) { clearTimeout(ss.workingTimer); ss.workingTimer = null; }
+      if (ss.text) {
+        ss.splitPoints.push(ss.text.length);
       }
-      // Show tool call in chat + typing indicator
       const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
-      this.currentToolCalls.push(label);
-      this.streamItems.push({ type: "tool", label, url } as StreamItem);
-      this.appendToolCall(label, url, true);
-      typingText.textContent = label;
-      this.typingEl.style.display = "";
+      ss.toolCalls.push(label);
+      ss.items.push({ type: "tool", label, url } as StreamItem);
+      if (isActiveTab) {
+        this.appendToolCall(label, url, true);
+        if (typingText) typingText.textContent = label;
+        this.typingEl.style.display = "";
+      }
     } else if ((stream === "tool" || toolName) && phase === "result") {
-      // Tool finished — remove animated dots from last tool item
-      this.deactivateLastToolItem();
-      typingText.textContent = "Thinking";
-      this.typingEl.style.display = "";
-
-      this.scrollToBottom();
+      if (isActiveTab) {
+        this.deactivateLastToolItem();
+        if (typingText) typingText.textContent = "Thinking";
+        this.typingEl.style.display = "";
+        this.scrollToBottom();
+      }
     } else if (stream === "compaction" || state === "compacting") {
       if (phase === "end") {
-        // Compaction finished — keep banner briefly then hide
-        setTimeout(() => this.hideBanner(), 2000);
+        if (isActiveTab) setTimeout(() => this.hideBanner(), 2000);
       } else {
-        // phase=start or unknown — show compacting indicator
-        this.currentToolCalls.push("Compacting memory");
-        this.streamItems.push({ type: "tool", label: "Compacting memory" });
-        this.appendToolCall("Compacting memory");
-        this.typingEl.style.display = "none";
-        this.showBanner("Compacting context...");
+        ss.toolCalls.push("Compacting memory");
+        ss.items.push({ type: "tool", label: "Compacting memory" });
+        if (isActiveTab) {
+          this.appendToolCall("Compacting memory");
+          this.typingEl.style.display = "none";
+          this.showBanner("Compacting context...");
+        }
       }
     }
   }
 
   handleChatEvent(payload: any): void {
-    // Session key "main" resolves to "agent:main:main" on the gateway
-    const sk = this.plugin.settings.sessionKey;
+    // Resolve which session this event belongs to
     const payloadSk = payload.sessionKey ?? "";
-    if (payloadSk !== sk && payloadSk !== `agent:main:${sk}` && !payloadSk.endsWith(`:${sk}`)) return;
+    const prefix = "agent:main:";
+    let eventSessionKey: string | null = null;
+    // Try to match against known sessions
+    for (const sk of [...this.streams.keys(), this.activeSessionKey]) {
+      if (payloadSk === sk || payloadSk === `${prefix}${sk}` || payloadSk.endsWith(`:${sk}`)) {
+        eventSessionKey = sk;
+        break;
+      }
+    }
+    // If no stream match, check if it's for the active tab (passive device case)
+    if (!eventSessionKey) {
+      const active = this.activeSessionKey;
+      if (payloadSk === active || payloadSk === `${prefix}${active}` || payloadSk.endsWith(`:${active}`)) {
+        eventSessionKey = active;
+      } else {
+        return; // Not for any known session
+      }
+    }
 
-    // No active stream (passive device): still refresh history and inject any locally collected stream items
-    if (!this.streamRunId && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
-      this.hideBanner();
-      const items = [...this.streamItems];
-      this.streamItems = [];
-      this.currentToolCalls = [];
-      // Passive device: refresh history on final
-      this.loadHistory().then(() => {
-        if (items.length > 0) {
-          // Persist on passive device too
-          const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
-          if (lastAssistant) {
-            const key = String(lastAssistant.timestamp);
-            if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
-            this.plugin.settings.streamItemsMap[key] = items;
-            this.plugin.saveSettings();
-          }
-          this.insertStreamItemsBeforeLastAssistant(items);
-        }
-      });
+    const ss = this.streams.get(eventSessionKey);
+    const isActiveTab = eventSessionKey === this.activeSessionKey;
+
+    // No active stream for this session (passive device): still refresh history
+    if (!ss && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
+      if (isActiveTab) {
+        this.hideBanner();
+        this.loadHistory().then(() => {});
+      }
       return;
     }
 
-    if (payload.state === "delta") {
-      // Clear timers, hide typing indicator once we have text to show
-      if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
-      if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-      this.lastDeltaTime = Date.now();
-      this.typingEl.style.display = "none";
-      this.hideBanner();
-      // Extract text from delta - could be string or content blocks
+    if (payload.state === "delta" && ss) {
+      if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
+      if (ss.workingTimer) { clearTimeout(ss.workingTimer); ss.workingTimer = null; }
+      ss.lastDeltaTime = Date.now();
       const text = this.extractDeltaText(payload.message);
       if (text) {
-        this.streamText = text;
-        this.updateStreamBubble();
+        ss.text = text;
+        if (isActiveTab) {
+          this.typingEl.style.display = "none";
+          this.hideBanner();
+          this.updateStreamBubble();
+        }
       }
     } else if (payload.state === "final") {
-      this.finishStream();
+      const items = ss ? [...ss.items] : [];
+      this.finishStream(eventSessionKey);
 
-      // Reload history — contentBlocks from gateway have proper tool interleaving
-      this.loadHistory().then(async () => {
-        await this.renderMessages();
-        this.updateContextMeter();
-      });
-    } else if (payload.state === "aborted") {
-      if (this.streamText) {
-        this.messages.push({ role: "assistant", text: this.streamText, images: [], timestamp: Date.now() });
+      if (isActiveTab) {
+        this.loadHistory().then(async () => {
+          await this.renderMessages();
+          this.updateContextMeter();
+          if (items.length > 0) {
+            const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
+            if (lastAssistant) {
+              const key = String(lastAssistant.timestamp);
+              if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
+              this.plugin.settings.streamItemsMap[key] = items;
+              this.plugin.saveSettings();
+            }
+          }
+        });
+      } else {
+        // Not active tab: just clean up, history will load when user switches to it
       }
-      this.finishStream();
-      this.renderMessages();
+    } else if (payload.state === "aborted") {
+      if (isActiveTab && ss?.text) {
+        this.messages.push({ role: "assistant", text: ss.text, images: [], timestamp: Date.now() });
+      }
+      this.finishStream(eventSessionKey);
+      if (isActiveTab) this.renderMessages();
     } else if (payload.state === "error") {
-      this.messages.push({
-        role: "assistant",
-        text: `Error: ${payload.errorMessage ?? "unknown error"}`,
-        images: [],
-        timestamp: Date.now(),
-      });
-      this.finishStream();
-      this.renderMessages();
+      if (isActiveTab) {
+        this.messages.push({
+          role: "assistant",
+          text: `Error: ${payload.errorMessage ?? "unknown error"}`,
+          images: [],
+          timestamp: Date.now(),
+        });
+      }
+      this.finishStream(eventSessionKey);
+      if (isActiveTab) this.renderMessages();
     }
   }
 
-  private finishStream(): void {
-    if (this.compactTimer) { clearTimeout(this.compactTimer); this.compactTimer = null; }
-    if (this.workingTimer) { clearTimeout(this.workingTimer); this.workingTimer = null; }
-    this.hideBanner();
-    this.streamRunId = null;
-    this.streamText = null;
-    this.lastDeltaTime = 0;
-    this.currentToolCalls = [];
-    this.streamItems = [];
-    this.streamSplitPoints = [];
-    this.streamEl = null;
-    this.abortBtn.style.display = "none";
-    this.typingEl.style.display = "none";
-    const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-    if (typingText) typingText.textContent = "Thinking";
+  private finishStream(sessionKey?: string): void {
+    const sk = sessionKey ?? this.activeSessionKey;
+    const ss = this.streams.get(sk);
+    if (ss) {
+      if (ss.compactTimer) clearTimeout(ss.compactTimer);
+      if (ss.workingTimer) clearTimeout(ss.workingTimer);
+      this.runToSession.delete(ss.runId);
+      this.streams.delete(sk);
+    }
+    // Only clear DOM if this is the active tab
+    if (sk === this.activeSessionKey) {
+      this.hideBanner();
+      this.streamEl = null;
+      this.abortBtn.style.display = "none";
+      this.typingEl.style.display = "none";
+      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+      if (typingText) typingText.textContent = "Thinking";
+    }
+  }
+
+  /** Restore stream UI (typing, tool calls, stream bubble) for the active tab after a tab switch */
+  private restoreStreamUI(): void {
+    const ss = this.activeStream;
+    if (!ss) return;
+
+    // Show abort button
+    this.abortBtn.style.display = "";
+
+    // Restore tool call items in the DOM
+    for (const item of ss.items) {
+      if (item.type === "tool") {
+        this.appendToolCall(item.label, item.url);
+      }
+    }
+
+    // Restore stream text bubble if we have delta text
+    if (ss.text) {
+      this.updateStreamBubble();
+      // If text is streaming, show working indicator (text exists but might still be coming)
+      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+      if (typingText) typingText.textContent = "Working";
+      this.typingEl.style.display = "";
+    } else {
+      // No text yet, show thinking
+      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+      if (typingText) typingText.textContent = "Thinking";
+      this.typingEl.style.display = "";
+    }
+
+    this.scrollToBottom();
   }
 
   private insertStreamItemsBeforeLastAssistant(items: StreamItem[]): void {
@@ -2300,8 +2438,8 @@ class OpenClawChatView extends ItemView {
   }
 
   private updateStreamBubble(): void {
-    if (!this.streamText) return;
-    const visibleText = this.streamText;
+    const ss = this.activeStream;
+    const visibleText = ss?.text;
     if (!visibleText) return;
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant openclaw-streaming");
