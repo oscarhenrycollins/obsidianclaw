@@ -173,6 +173,33 @@ function generateId(): string {
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Delete a session via gateway, with fallback for unprefixed store keys.
+ * The gateway stores channel sessions (telegram:, discord:, etc.) without the
+ * agent:main: prefix, but sessions.list returns them prefixed. Sending the
+ * prefixed key to sessions.delete succeeds ({ok:true}) but returns deleted:false
+ * because the key lookup misses the unprefixed store entry.
+ * Fix: if the first attempt returns deleted:false and the key has an agent prefix,
+ * retry with the raw suffix (the actual store key).
+ */
+async function deleteSessionWithFallback(
+  gateway: GatewayClient,
+  key: string,
+  deleteTranscript = true
+): Promise<boolean> {
+  const result: any = await gateway.request("sessions.delete", { key, deleteTranscript });
+  if (result?.deleted) return true;
+
+  // Fallback: strip agent:<id>: prefix and retry with raw key
+  const match = key.match(/^agent:[^:]+:(.+)$/);
+  if (match) {
+    const rawKey = match[1];
+    const retry: any = await gateway.request("sessions.delete", { key: rawKey, deleteTranscript });
+    return !!retry?.deleted;
+  }
+  return false;
+}
+
 class GatewayClient {
   private ws: WebSocket | null = null;
   private pending = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
@@ -1556,9 +1583,10 @@ class OpenClawChatView extends ItemView {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
+          if (!this.plugin.gateway?.connected) return;
           try {
-            await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
-            new Notice(`Closed: ${tab.label}`);
+            const deleted = await deleteSessionWithFallback(this.plugin.gateway, `agent:main:${tab.key}`);
+            new Notice(deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`);
           } catch (err: any) {
             new Notice(`Close failed: ${err?.message || err}`);
           }
@@ -2774,8 +2802,9 @@ class SessionPickerModal extends Modal {
           delBtn.textContent = "…";
           delBtn.disabled = true;
           try {
-            await this.plugin.gateway?.request("sessions.delete", { key: session.key, deleteTranscript: true });
-            new Notice(`Deleted: ${name}`);
+            if (!this.plugin.gateway?.connected) throw new Error("Not connected");
+            const deleted = await deleteSessionWithFallback(this.plugin.gateway, session.key);
+            new Notice(deleted ? `Deleted: ${name}` : `Could not delete: ${name}`);
           } catch (err: any) {
             new Notice(`Delete failed: ${err?.message || err}`);
           }
