@@ -860,7 +860,7 @@ class OpenClawChatView extends ItemView {
   plugin: OpenClawPlugin;
   private messagesEl!: HTMLElement;
   private tabBarEl!: HTMLElement;
-  private tabSessions: { key: string; label: string; pct: number; isSubagent?: boolean }[] = [];
+  private tabSessions: { key: string; label: string; pct: number }[] = [];
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private reconnectBtn!: HTMLButtonElement;
@@ -1055,11 +1055,6 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  isCurrentSessionSubagent(): boolean {
-    const sk = this.plugin.settings.sessionKey || "main";
-    return this.tabSessions.some(t => t.key === sk && t.isSubagent);
-  }
-
   updateStatus(): void {
     if (!this.statusEl) return;
     this.statusEl.removeClass("connected", "disconnected");
@@ -1068,11 +1063,10 @@ class OpenClawChatView extends ItemView {
 
     // Swap send button for reconnect when disconnected
     if (connected) {
-      const isSubagentView = this.isCurrentSessionSubagent();
-      this.sendBtn.style.display = isSubagentView ? "none" : "";
+      this.sendBtn.style.display = "";
       if (this.reconnectBtn) this.reconnectBtn.style.display = "none";
-      this.inputEl.disabled = isSubagentView;
-      this.inputEl.placeholder = isSubagentView ? "Sub-agent session (view only)" : "Message...";
+      this.inputEl.disabled = false;
+      this.inputEl.placeholder = "Message...";
     } else {
       this.sendBtn.style.display = "none";
       if (this.reconnectBtn) this.reconnectBtn.style.display = "";
@@ -1415,10 +1409,10 @@ class OpenClawChatView extends ItemView {
         this.cachedSessionDisplayName = session.displayName;
         this.updateSessionPill();
       }
-      // Detect session list changes (new sub-agents, completed sub-agents, etc.) and re-render tabs
+      // Detect session list changes and re-render tabs when needed
       const agentPrefix = "agent:main:";
       const currentSessionKeys = new Set(
-        sessions.filter((s: any) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")).map((s: any) => s.key)
+        sessions.filter((s: any) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:") && !s.key.includes(":subagent:")).map((s: any) => s.key)
       );
       const trackedKeys = new Set(this.tabSessions.map(t => `${agentPrefix}${t.key}`));
       const added = [...currentSessionKeys].some(k => !trackedKeys.has(k));
@@ -1484,11 +1478,12 @@ class OpenClawChatView extends ItemView {
       } catch { /* use empty */ }
     }
 
-    // Filter: show all agent sessions except cron (mirror gateway 1:1)
+    // Filter: show all agent sessions except cron and sub-agents
     const agentPrefix = "agent:main:";
     const convSessions = sessions.filter(s => {
       if (!s.key.startsWith(agentPrefix)) return false;
       if (s.key.includes(":cron:")) return false;
+      if (s.key.includes(":subagent:")) return false;
       return true;
     });
 
@@ -1503,36 +1498,25 @@ class OpenClawChatView extends ItemView {
       this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
     }
 
-    // Add other sessions in creation order (oldest first), sub-agents last
+    // Add other sessions in creation order (oldest first)
     const others = convSessions
       .filter(s => s.key.slice(agentPrefix.length) !== "main")
-      .sort((a, b) => {
-        const aIsSub = a.key.includes(":subagent:");
-        const bIsSub = b.key.includes(":subagent:");
-        if (aIsSub !== bIsSub) return aIsSub ? 1 : -1; // sub-agents last
-        return (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0);
-      });
+      .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0));
     let num = 1;
     for (const s of others) {
       const sk = s.key.slice(agentPrefix.length);
       const used = s.totalTokens || 0;
       const max = s.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
-      const isSubagent = sk.startsWith("subagent:") || s.key.includes(":subagent:");
-      // Only show sub-agents that are actively running (have recent activity)
-      if (isSubagent) {
-        const age = Date.now() - (s.updatedAt || 0);
-        if (age > 120000) continue; // Skip sub-agents idle for >2 min (likely completed)
-      }
-      const label = isSubagent ? "🤖" : (s.label || s.displayName || String(num));
-      this.tabSessions.push({ key: sk, label, pct, isSubagent });
-      if (!isSubagent) num++;
+      const label = s.label || s.displayName || String(num);
+      this.tabSessions.push({ key: sk, label, pct });
+      num++;
     }
 
     // Render each tab
     for (const tab of this.tabSessions) {
       const isCurrent = tab.key === currentKey;
-      const tabCls = `openclaw-tab${isCurrent ? " active" : ""}${tab.isSubagent ? " openclaw-tab-subagent" : ""}`;
+      const tabCls = `openclaw-tab${isCurrent ? " active" : ""}`;
       const tabEl = this.tabBarEl.createDiv({ cls: tabCls });
 
       // Row: label + ×
@@ -1548,14 +1532,17 @@ class OpenClawChatView extends ItemView {
           e.stopPropagation();
           await this.resetCurrentTab();
         });
-      } else if (tab.isSubagent) {
-        closeBtn.style.display = "none";
       } else {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
+            // Try with agent prefix first, then raw key (some sessions like Telegram are stored without prefix)
+            try {
+              await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
+            } catch {
+              await this.plugin.gateway?.request("sessions.delete", { key: tab.key, deleteTranscript: true });
+            }
             new Notice(`Closed: ${tab.label}`);
           } catch (err: any) {
             new Notice(`Close failed: ${err?.message || err}`);
@@ -2302,11 +2289,6 @@ class OpenClawChatView extends ItemView {
 
   async renderMessages(): Promise<void> {
     this.messagesEl.empty();
-    // Show banner for sub-agent sessions
-    if (this.isCurrentSessionSubagent()) {
-      const banner = this.messagesEl.createDiv("openclaw-subagent-banner");
-      banner.textContent = "🤖 Sub-agent running in the background. This tab will close when completed.";
-    }
     for (const msg of this.messages) {
       if (msg.role === "assistant") {
         const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use" || b.type === "toolCall") || false;
