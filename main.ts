@@ -888,6 +888,8 @@ class OpenClawChatView extends ItemView {
   private messagesEl!: HTMLElement;
   private tabBarEl!: HTMLElement;
   private tabSessions: { key: string; label: string; pct: number }[] = [];
+  private renderingTabs = false;
+  private tabDeleteInProgress = false;
   private inputEl!: HTMLTextAreaElement;
   private sendBtn!: HTMLButtonElement;
   private reconnectBtn!: HTMLButtonElement;
@@ -909,7 +911,7 @@ class OpenClawChatView extends ItemView {
   private contextFillEl!: HTMLElement;
   private contextLabelEl!: HTMLElement;
   modelLabelEl!: HTMLElement;
-  private sessionPillEl!: HTMLElement;
+
   currentModel: string = "";
   currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = "";
@@ -957,7 +959,7 @@ class OpenClawChatView extends ItemView {
     this.renderTabs();
 
     // Hidden elements for compatibility
-    this.sessionPillEl = createDiv();
+
     this.contextMeterEl = createDiv();
     this.contextFillEl = createDiv();
     this.contextLabelEl = document.createElement("span");
@@ -1434,7 +1436,6 @@ class OpenClawChatView extends ItemView {
       // Update session display name from gateway
       if (session.displayName && session.displayName !== this.cachedSessionDisplayName) {
         this.cachedSessionDisplayName = session.displayName;
-        this.updateSessionPill();
       }
       // Detect session list changes and re-render tabs when needed
       const agentPrefix = "agent:main:";
@@ -1444,7 +1445,7 @@ class OpenClawChatView extends ItemView {
       const trackedKeys = new Set(this.tabSessions.map(t => `${agentPrefix}${t.key}`));
       const added = [...currentSessionKeys].some(k => !trackedKeys.has(k));
       const removed = [...trackedKeys].some(k => !currentSessionKeys.has(k));
-      if (added || removed) {
+      if ((added || removed) && !this.tabDeleteInProgress) {
         // If viewing a session that no longer exists, switch back to main
         if (removed && !currentSessionKeys.has(`${agentPrefix}${sk}`)) {
           this.plugin.settings.sessionKey = "main";
@@ -1459,23 +1460,6 @@ class OpenClawChatView extends ItemView {
     } catch { /* ignore */ }
   }
 
-  updateSessionPill(): void {
-    if (!this.sessionPillEl) return;
-    // Prefer cached gateway displayName, fall back to local logic
-    let display = this.cachedSessionDisplayName || "";
-    if (!display) {
-      const sessionKey = this.plugin.settings.sessionKey || "main";
-      if (sessionKey === "main") display = "Main";
-      else if (sessionKey.startsWith("telegram:")) display = "Telegram";
-      else if (sessionKey.startsWith("discord:")) display = "Discord";
-      else if (sessionKey.startsWith("whatsapp:")) display = "WhatsApp";
-      else display = sessionKey;
-    }
-    this.sessionPillEl.empty();
-    this.sessionPillEl.createSpan({ text: display, cls: "openclaw-ctx-pill-text" });
-    this.sessionPillEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
-  }
-
   updateModelPill(): void {
     if (!this.modelLabelEl) return;
     const model = this.currentModel ? this.shortModelName(this.currentModel) : "model";
@@ -1484,15 +1468,13 @@ class OpenClawChatView extends ItemView {
     this.modelLabelEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
   }
 
-  // Alias for external callers
-  updateContextPill(): void { this.updateSessionPill(); this.updateModelPill(); }
-
-  openSessionPicker(): void {
-    new SessionPickerModal(this.app, this.plugin, this).open();
+  async renderTabs(): Promise<void> {
+    if (!this.tabBarEl || this.renderingTabs) return;
+    this.renderingTabs = true;
+    try { await this._renderTabsInner(); } finally { this.renderingTabs = false; }
   }
 
-  async renderTabs(): Promise<void> {
-    if (!this.tabBarEl) return;
+  private async _renderTabsInner(): Promise<void> {
     this.tabBarEl.empty();
     const currentKey = this.plugin.settings.sessionKey || "main";
 
@@ -1551,13 +1533,11 @@ class OpenClawChatView extends ItemView {
       const labelText = tab.label;
       row.createSpan({ text: labelText, cls: "openclaw-tab-label" });
 
-      // × button: Main & channel sessions = reset, others = close/delete
-      const channelPrefixes = ["telegram:", "discord:", "whatsapp:", "signal:", "slack:", "irc:"];
-      const isChannelSession = channelPrefixes.some(p => tab.key.startsWith(p));
-      const isResetOnly = tab.key === "main" || isChannelSession;
+      // × button: Main = reset, everything else = close/delete
+      const isResetOnly = tab.key === "main";
       const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
       if (isResetOnly) {
-        closeBtn.title = tab.key === "main" ? "Reset conversation" : "Reset conversation";
+        closeBtn.title = "Reset conversation";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           if (!this.plugin.gateway?.connected) return;
@@ -1583,7 +1563,8 @@ class OpenClawChatView extends ItemView {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          if (!this.plugin.gateway?.connected) return;
+          if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
+          this.tabDeleteInProgress = true;
           try {
             const deleted = await deleteSessionWithFallback(this.plugin.gateway, `agent:main:${tab.key}`);
             new Notice(deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`);
@@ -1598,6 +1579,7 @@ class OpenClawChatView extends ItemView {
             this.messagesEl.empty();
             await this.loadHistory();
           }
+          this.tabDeleteInProgress = false;
           await this.renderTabs();
           await this.updateContextMeter();
         });
@@ -2614,284 +2596,7 @@ export default class OpenClawPlugin extends Plugin {
 
 // ─── Confirm Modal ──────────────────────────────────────────────────
 
-// ─── Chat Picker Modal (was: Session Picker) ────────────────────────
 
-class SessionPickerModal extends Modal {
-  plugin: OpenClawPlugin;
-  chatView: OpenClawChatView;
-  private sessions: any[] = [];
-  private bots: { id: string; isCurrent: boolean }[] = [];
-  private selectedBot: string = "main";
-
-  constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
-    super(app);
-    this.plugin = plugin;
-    this.chatView = chatView;
-  }
-
-  async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-picker");
-    this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading...";
-
-    try {
-      const result = await this.plugin.gateway?.request("sessions.list", {});
-      this.sessions = result?.sessions || [];
-    } catch { this.sessions = []; }
-
-    // Detect bots from session keys (agent:{botId}:...)
-    const botIds = new Set<string>();
-    for (const s of this.sessions) {
-      const match = s.key.match(/^agent:([^:]+):/);
-      if (match) botIds.add(match[1]);
-    }
-    if (botIds.size === 0) botIds.add("main");
-    this.selectedBot = "main";
-    this.bots = [...botIds].map(id => ({ id, isCurrent: id === "main" }));
-
-    // Always show bot selection first
-    this.renderBots();
-  }
-
-  onClose(): void { this.contentEl.empty(); }
-
-  /** Turn a raw session key into a friendly display name */
-  private friendlyName(shortKey: string, session: any): string {
-    // Main is always "Main" regardless of gateway metadata
-    if (shortKey === "main") return "Main";
-    if (session.label && session.label.length < 40) return session.label;
-    if (session.displayName && session.displayName.length < 40) return session.displayName;
-    if (shortKey.startsWith("telegram:")) return "Telegram";
-    if (shortKey.startsWith("discord:")) return "Discord";
-    if (shortKey.startsWith("whatsapp:")) return "WhatsApp";
-    if (shortKey.startsWith("signal:")) return "Signal";
-    if (shortKey.startsWith("webchat:")) return "WebChat";
-    return shortKey.replace(/:/g, " / ");
-  }
-
-  // ─── Bot selection (only shown if multiple bots) ──────────────
-  private renderBots(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-
-    contentEl.createEl("h3", { text: "Choose your bot", cls: "openclaw-picker-title" });
-    const hint = contentEl.createDiv("openclaw-picker-hint");
-    hint.innerHTML = "Each bot is a separate AI agent. <a href='https://docs.openclaw.ai/concepts/multi-agent'>Add more on your gateway.</a>";
-
-    const list = contentEl.createDiv("openclaw-picker-list");
-    for (const bot of this.bots) {
-      const row = list.createDiv({ cls: `openclaw-picker-row${bot.id === this.selectedBot ? " active" : ""}` });
-      const left = row.createDiv("openclaw-picker-row-left");
-      if (bot.id === this.selectedBot) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
-      left.createSpan({ text: bot.id });
-      const right = row.createDiv("openclaw-picker-row-right");
-      const prefix = `agent:${bot.id}:`;
-      const convCount = this.sessions.filter(s => {
-        if (!s.key.startsWith(prefix) || s.key.includes(":cron:")) return false;
-        const sk = s.key.slice(prefix.length);
-        if (sk.startsWith("subagent:")) return false;
-        return true;
-      }).length;
-      right.createSpan({ text: `${convCount} conversation${convCount !== 1 ? "s" : ""} →`, cls: "openclaw-picker-meta" });
-      row.addEventListener("click", () => {
-        this.selectedBot = bot.id;
-        this.renderConversations();
-      });
-    }
-  }
-
-  // ─── Conversation list ────────────────────────────────────────
-  private renderConversations(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-
-    const currentSessionKey = this.plugin.settings.sessionKey || "main";
-    const agentPrefix = `agent:${this.selectedBot}:`;
-
-    // Header with back button if multiple bots
-    if (this.bots.length > 1) {
-      const header = contentEl.createDiv("openclaw-picker-header");
-      const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + this.selectedBot });
-      backBtn.addEventListener("click", () => this.renderBots());
-    }
-
-    contentEl.createEl("h3", { text: "Conversations", cls: "openclaw-picker-title" });
-    const hint = contentEl.createDiv("openclaw-picker-hint");
-    hint.textContent = "There's always a Main conversation. You can add more for separate topics.";
-
-    // Settings cog
-    const cogRow = contentEl.createDiv("openclaw-picker-header-right");
-    const cogBtn = cogRow.createEl("button", { cls: "openclaw-picker-cog", text: "⚙" });
-    cogBtn.title = "Plugin settings";
-    cogBtn.addEventListener("click", () => {
-      this.close();
-      (this.app as any).setting?.open?.();
-      (this.app as any).setting?.openTabById?.("openclaw");
-    });
-
-    const conversations = this.sessions.filter((s: any) => {
-      if (!s.key.startsWith(agentPrefix)) return false;
-      if (s.key.includes(":cron:")) return false;
-      const shortKey = s.key.slice(agentPrefix.length);
-      if (shortKey.startsWith("subagent:")) return false;
-      return true;
-    });
-
-    const list = contentEl.createDiv("openclaw-picker-list");
-
-    for (const session of conversations) {
-      const shortKey = session.key.slice(agentPrefix.length);
-      const isCurrent = shortKey === currentSessionKey;
-      const used = session.totalTokens || 0;
-      const max = session.contextTokens || 200000;
-      const pct = Math.min(100, Math.round((used / max) * 100));
-      const name = this.friendlyName(shortKey, session);
-      const isMain = shortKey === "main";
-
-      const row = list.createDiv({ cls: `openclaw-picker-row${isCurrent ? " active" : ""}` });
-
-      const left = row.createDiv("openclaw-picker-row-left");
-      if (isCurrent) left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
-      left.createSpan({ text: name });
-
-      const right = row.createDiv("openclaw-picker-row-right");
-
-      // Context meter
-      const meter = right.createDiv("openclaw-picker-meter");
-      const fill = meter.createDiv("openclaw-picker-fill");
-      fill.style.width = pct + "%";
-      if (pct > 80) fill.addClass("high");
-      else if (pct > 60) fill.addClass("mid");
-      right.createSpan({ text: `${pct}%`, cls: "openclaw-picker-pct" });
-
-      // Rename button (not for main)
-      if (!isMain) {
-        const renameBtn = right.createEl("button", { text: "✎", cls: "openclaw-picker-del" });
-        renameBtn.title = "Rename";
-        renameBtn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          new TextInputModal(this.app, {
-            title: "Rename conversation",
-            placeholder: "New name",
-            confirmText: "Rename",
-            initialValue: name,
-            onConfirm: async (newName: string) => {
-              if (!newName.trim()) return;
-              try {
-                await this.plugin.gateway?.request("sessions.patch", { key: session.key, label: newName.trim() });
-                session.label = newName.trim();
-                if (isCurrent) {
-                  this.chatView.cachedSessionDisplayName = newName.trim();
-                  this.chatView.updateSessionPill();
-                }
-                this.renderConversations();
-                new Notice(`Renamed to: ${newName.trim()}`);
-              } catch (err: any) {
-                new Notice(`Rename failed: ${err?.message || err}`);
-              }
-            },
-          }).open();
-        });
-      }
-
-      // Delete button (not for main, not for current)
-      if (!isMain && !isCurrent) {
-        const delBtn = right.createEl("button", { text: "✕", cls: "openclaw-picker-del" });
-        delBtn.title = "Delete conversation";
-        delBtn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          delBtn.textContent = "…";
-          delBtn.disabled = true;
-          try {
-            if (!this.plugin.gateway?.connected) throw new Error("Not connected");
-            const deleted = await deleteSessionWithFallback(this.plugin.gateway, session.key);
-            new Notice(deleted ? `Deleted: ${name}` : `Could not delete: ${name}`);
-          } catch (err: any) {
-            new Notice(`Delete failed: ${err?.message || err}`);
-          }
-          // Small delay to let gateway process, then re-fetch to confirm
-          await new Promise(r => setTimeout(r, 500));
-          try {
-            const result = await this.plugin.gateway?.request("sessions.list", {});
-            this.sessions = result?.sessions || [];
-          } catch { /* keep current */ }
-          this.renderConversations();
-        });
-      }
-
-      if (!isCurrent) {
-        row.addEventListener("click", async () => {
-          this.plugin.settings.sessionKey = shortKey;
-          await this.plugin.saveSettings();
-          this.close();
-          this.chatView.cachedSessionDisplayName = name;
-          this.chatView.updateSessionPill();
-          this.chatView.messages = [];
-          this.chatView.messagesEl.empty();
-          await this.chatView.loadHistory();
-          await this.chatView.updateContextMeter();
-          new Notice(`Switched to: ${name}`);
-        });
-      }
-    }
-
-    // + New conversation
-    const newRow = list.createDiv("openclaw-picker-row openclaw-picker-add");
-    newRow.createSpan({ text: "+ New conversation" });
-    newRow.addEventListener("click", () => {
-      this.close();
-      new TextInputModal(this.app, {
-        title: "New conversation",
-        placeholder: "Name (e.g. 'Work', 'Personal', 'Research')",
-        confirmText: "Create",
-        onConfirm: async (name: string) => {
-          if (!name.trim()) {
-            new Notice("Name cannot be empty");
-            return;
-          }
-          const sessionKey = name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-
-          // Create session on gateway by sending /new to that key
-          try {
-            await this.plugin.gateway?.request("chat.send", {
-              sessionKey: sessionKey,
-              message: "/new",
-              deliver: false,
-              idempotencyKey: "create-" + Date.now(),
-            });
-            // Label the session
-            await new Promise(r => setTimeout(r, 500));
-            try {
-              await this.plugin.gateway?.request("sessions.patch", {
-                key: `agent:main:${sessionKey}`,
-                label: name.trim(),
-              });
-            } catch { /* label is optional */ }
-          } catch (err: any) {
-            new Notice(`Create failed: ${err?.message || err}`);
-            return;
-          }
-
-          // Switch to the new session
-          this.plugin.settings.sessionKey = sessionKey;
-          this.chatView.messages = [];
-          if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
-          await this.plugin.saveSettings();
-          this.chatView.messagesEl.empty();
-          this.chatView.cachedSessionDisplayName = name.trim();
-          this.chatView.updateSessionPill();
-          this.chatView.updateContextMeter();
-          new Notice(`Created: ${name.trim()}`);
-        },
-      }).open();
-    });
-
-    // Footer
-    const footer = contentEl.createDiv("openclaw-picker-hint");
-    footer.style.marginTop = "8px";
-    footer.style.fontSize = "11px";
-    footer.textContent = "Main can't be deleted. New conversations are created when you send your first message.";
-  }
-}
 
 // ─── Model Picker Modal ─────────────────────────────────────────────
 
