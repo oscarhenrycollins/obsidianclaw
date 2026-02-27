@@ -1537,14 +1537,26 @@ class OpenClawChatView extends ItemView {
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            // Try with agent prefix first, then raw key (some sessions like Telegram are stored without prefix)
+            const prefixedKey = `agent:main:${tab.key}`;
+            console.log(`[ObsidianClaw] DELETE tab.key="${tab.key}" prefixedKey="${prefixedKey}"`);
+            // Try with agent prefix first
             try {
-              await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
-            } catch {
-              await this.plugin.gateway?.request("sessions.delete", { key: tab.key, deleteTranscript: true });
+              const r1 = await this.plugin.gateway?.request("sessions.delete", { key: prefixedKey, deleteTranscript: true });
+              console.log(`[ObsidianClaw] DELETE prefixed OK:`, r1);
+            } catch (e1: any) {
+              console.log(`[ObsidianClaw] DELETE prefixed FAILED:`, e1?.message || e1);
+              // Try raw key
+              try {
+                const r2 = await this.plugin.gateway?.request("sessions.delete", { key: tab.key, deleteTranscript: true });
+                console.log(`[ObsidianClaw] DELETE raw OK:`, r2);
+              } catch (e2: any) {
+                console.log(`[ObsidianClaw] DELETE raw FAILED:`, e2?.message || e2);
+                throw e2;
+              }
             }
             new Notice(`Closed: ${tab.label}`);
           } catch (err: any) {
+            console.error(`[ObsidianClaw] DELETE FINAL ERROR:`, err);
             new Notice(`Close failed: ${err?.message || err}`);
           }
           // Switch to main if we closed the active tab
