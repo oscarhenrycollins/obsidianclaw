@@ -16,10 +16,18 @@ import {
 
 type StreamItem = { type: "tool"; label: string; url?: string; textPos?: number } | { type: "text"; text: string };
 
+interface AgentInfo {
+  id: string;
+  name: string;
+  emoji: string;
+  creature: string;
+}
+
 interface OpenClawSettings {
   gatewayUrl: string;
   token: string;
   sessionKey: string;
+  activeAgentId?: string;  // currently selected agent id
   currentModel?: string;  // persisted model selection (provider/model format)
   onboardingComplete: boolean;
   deviceId?: string;
@@ -927,8 +935,9 @@ class OpenClawChatView extends ItemView {
   currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = "";
 
-  // Bot identity from IDENTITY.md
-  private botIdentity: { name: string; emoji: string; creature: string; vibe: string } = { name: "Agent", emoji: "🤖", creature: "", vibe: "" };
+  // Agent switcher state
+  private agents: AgentInfo[] = [];
+  private activeAgent: AgentInfo = { id: "main", name: "Agent", emoji: "🤖", creature: "" };
   private profileBtnEl: HTMLElement | null = null;
   private profileDropdownEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
@@ -944,6 +953,11 @@ class OpenClawChatView extends ItemView {
   private readonly sendSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
   private readonly stopSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
   private bannerEl!: HTMLElement;
+
+  /** Get the session key prefix for the active agent */
+  private get agentPrefix(): string {
+    return `agent:${this.activeAgent.id}:`;
+  }
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
     super(leaf);
@@ -974,14 +988,14 @@ class OpenClawChatView extends ItemView {
     this.tabBarEl = topBar.createDiv("openclaw-tab-bar");
     this.tabBarEl.addEventListener("wheel", (e) => { e.preventDefault(); this.tabBarEl.scrollLeft += e.deltaY; }, { passive: false });
 
-    // Profile button (right side of top bar)
-    this.profileBtnEl = topBar.createDiv("openclaw-profile-btn");
-    this.profileBtnEl.setAttribute("aria-label", "Bot profile");
-    this.profileBtnEl.innerHTML = `<span class="openclaw-profile-emoji">${this.botIdentity.emoji}</span>`;
-    this.profileBtnEl.addEventListener("click", (e) => { e.stopPropagation(); this.toggleProfileDropdown(); });
+    // Agent switcher button (right side of top bar)
+    this.profileBtnEl = topBar.createDiv("openclaw-agent-btn");
+    this.profileBtnEl.setAttribute("aria-label", "Switch agent");
+    this.updateAgentButton();
+    this.profileBtnEl.addEventListener("click", (e) => { e.stopPropagation(); this.toggleAgentSwitcher(); });
 
-    // Profile dropdown (hidden by default)
-    this.profileDropdownEl = container.createDiv("openclaw-profile-dropdown");
+    // Agent switcher dropdown (hidden by default)
+    this.profileDropdownEl = container.createDiv("openclaw-agent-dropdown");
     this.profileDropdownEl.style.display = "none";
 
     // Close dropdown when clicking outside
@@ -1136,85 +1150,103 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  /** Fetch IDENTITY.md from the gateway and parse bot identity fields */
-  async loadBotIdentity(): Promise<void> {
+  /** Fetch all agents from the gateway and load their identities */
+  async loadAgents(): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
-      const result = await this.plugin.gateway.request("agents.files.get", { agentId: "main", name: "IDENTITY.md" });
-      const content = result?.file?.content;
-      if (!content) return;
-      const parse = (key: string): string => {
-        const m = content.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*(.+)`, "i"));
-        return m ? m[1].trim() : "";
-      };
-      this.botIdentity = {
-        name: parse("Name") || "Agent",
-        emoji: parse("Emoji") || "🤖",
-        creature: parse("Creature") || "",
-        vibe: parse("Vibe") || "",
-      };
-      this.updateProfileButton();
+      // Get agent list
+      const result = await this.plugin.gateway.request("agents.list", {});
+      const agentList: any[] = result?.agents || [];
+      if (agentList.length === 0) {
+        // Single-agent mode — just load identity for "main"
+        agentList.push({ id: "main" });
+      }
+
+      // Load IDENTITY.md for each agent
+      const agents: AgentInfo[] = [];
+      for (const a of agentList) {
+        const info: AgentInfo = { id: a.id || "main", name: a.name || a.id || "Agent", emoji: "🤖", creature: "" };
+        try {
+          const file = await this.plugin.gateway.request("agents.files.get", { agentId: a.id, name: "IDENTITY.md" });
+          const content = file?.file?.content;
+          if (content) {
+            const parse = (key: string): string => {
+              const m = content.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*(.+)`, "i"));
+              return m ? m[1].trim() : "";
+            };
+            info.name = parse("Name") || info.name;
+            info.emoji = parse("Emoji") || "🤖";
+            info.creature = parse("Creature") || "";
+          }
+        } catch { /* use defaults */ }
+        agents.push(info);
+      }
+
+      this.agents = agents;
+
+      // Set active agent
+      const savedId = this.plugin.settings.activeAgentId;
+      const active = agents.find(a => a.id === savedId) || agents[0];
+      if (active) {
+        this.activeAgent = active;
+        if (this.plugin.settings.activeAgentId !== active.id) {
+          this.plugin.settings.activeAgentId = active.id;
+          await this.plugin.saveSettings();
+        }
+      }
+
+      this.updateAgentButton();
     } catch (e) {
-      console.warn("[ObsidianClaw] Failed to load IDENTITY.md:", e);
+      console.warn("[ObsidianClaw] Failed to load agents:", e);
     }
   }
 
-  /** Update the profile button emoji/initial */
-  private updateProfileButton(): void {
+  /** Update the agent button to show current agent */
+  private updateAgentButton(): void {
     if (!this.profileBtnEl) return;
-    this.profileBtnEl.innerHTML = `<span class="openclaw-profile-emoji">${this.botIdentity.emoji || this.botIdentity.name.charAt(0)}</span>`;
+    const name = this.activeAgent.name;
+    const emoji = this.activeAgent.emoji || "🤖";
+    this.profileBtnEl.innerHTML = `<span class="openclaw-agent-emoji">${emoji}</span><span class="openclaw-agent-name">${name}</span>`;
   }
 
-  /** Toggle the profile dropdown */
-  private toggleProfileDropdown(): void {
+  /** Switch to a different agent */
+  private async switchAgent(agent: AgentInfo): Promise<void> {
+    if (agent.id === this.activeAgent.id) return;
+    this.activeAgent = agent;
+    this.plugin.settings.activeAgentId = agent.id;
+    this.plugin.settings.sessionKey = "main"; // reset to main session of new agent
+    await this.plugin.saveSettings();
+    this.updateAgentButton();
+    await this.loadHistory();
+    await this.renderTabs();
+  }
+
+  /** Toggle the agent switcher dropdown */
+  private toggleAgentSwitcher(): void {
     if (!this.profileDropdownEl) return;
     const visible = this.profileDropdownEl.style.display !== "none";
     if (visible) {
       this.profileDropdownEl.style.display = "none";
       return;
     }
-    // Build dropdown content
     this.profileDropdownEl.empty();
 
-    // Bot section
-    const botSection = this.profileDropdownEl.createDiv("openclaw-profile-section");
-    const botHeader = botSection.createDiv("openclaw-profile-section-header");
-    botHeader.createSpan({ text: "BOT", cls: "openclaw-profile-section-label" });
-    const botItem = botSection.createDiv("openclaw-profile-item active");
-    botItem.createSpan({ text: this.botIdentity.emoji || "🤖", cls: "openclaw-profile-item-emoji" });
-    const botInfo = botItem.createDiv("openclaw-profile-item-info");
-    botInfo.createDiv({ text: this.botIdentity.name, cls: "openclaw-profile-item-name" });
-    if (this.botIdentity.creature) {
-      botInfo.createDiv({ text: this.botIdentity.creature, cls: "openclaw-profile-item-sub" });
+    for (const agent of this.agents) {
+      const isActive = agent.id === this.activeAgent.id;
+      const item = this.profileDropdownEl.createDiv({ cls: `openclaw-agent-item${isActive ? " active" : ""}` });
+      item.createSpan({ text: agent.emoji || "🤖", cls: "openclaw-agent-item-emoji" });
+      const info = item.createDiv("openclaw-agent-item-info");
+      info.createDiv({ text: agent.name, cls: "openclaw-agent-item-name" });
+      if (agent.creature) {
+        info.createDiv({ text: agent.creature, cls: "openclaw-agent-item-sub" });
+      }
+      if (!isActive) {
+        item.addEventListener("click", () => {
+          this.profileDropdownEl!.style.display = "none";
+          this.switchAgent(agent);
+        });
+      }
     }
-
-    // Server section
-    const serverSection = this.profileDropdownEl.createDiv("openclaw-profile-section");
-    const serverHeader = serverSection.createDiv("openclaw-profile-section-header");
-    serverHeader.createSpan({ text: "SERVER", cls: "openclaw-profile-section-label" });
-    const serverItem = serverSection.createDiv("openclaw-profile-item active");
-    const serverEmoji = serverItem.createSpan({ text: "🟢", cls: "openclaw-profile-item-emoji" });
-    if (!this.plugin.gatewayConnected) serverEmoji.setText("🔴");
-    const serverInfo = serverItem.createDiv("openclaw-profile-item-info");
-    // Extract hostname from gateway URL
-    let serverName = "Gateway";
-    try {
-      const raw = this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, "https://");
-      const hostname = new URL(raw).hostname;
-      serverName = hostname.split(".")[0] || hostname;
-    } catch { /* fallback */ }
-    serverInfo.createDiv({ text: serverName, cls: "openclaw-profile-item-name" });
-    serverInfo.createDiv({ text: this.plugin.gatewayConnected ? "Connected" : "Disconnected", cls: "openclaw-profile-item-sub" });
-
-    // Settings link
-    const settingsItem = this.profileDropdownEl.createDiv("openclaw-profile-settings");
-    settingsItem.innerHTML = `⚙️ Settings`;
-    settingsItem.addEventListener("click", () => {
-      this.profileDropdownEl!.style.display = "none";
-      // Open plugin settings
-      (this.app as any).setting?.open?.();
-      (this.app as any).setting?.openTabById?.("openclaw");
-    });
 
     this.profileDropdownEl.style.display = "block";
   }
@@ -1559,7 +1591,7 @@ class OpenClawChatView extends ItemView {
       // Find session matching current sessionKey (try exact match, then with agent prefix)
       const sk = this.plugin.settings.sessionKey || "main";
       const session = sessions.find((s: any) => s.key === sk) ||
-        sessions.find((s: any) => s.key === `agent:main:${sk}`) ||
+        sessions.find((s: any) => s.key === `${this.agentPrefix}${sk}`) ||
         sessions.find((s: any) => s.key.endsWith(`:${sk}`));
       if (!session) return;
       const used = session.totalTokens || 0;
@@ -1583,7 +1615,7 @@ class OpenClawChatView extends ItemView {
         this.cachedSessionDisplayName = session.displayName;
       }
       // Detect session list changes and re-render tabs when needed
-      const agentPrefix = "agent:main:";
+      const agentPrefix = this.agentPrefix;
       const currentSessionKeys = new Set(
         sessions.filter((s: any) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:") && !s.key.includes(":subagent:")).map((s: any) => s.key)
       );
@@ -1633,7 +1665,7 @@ class OpenClawChatView extends ItemView {
     }
 
     // Filter: show all agent sessions except cron and sub-agents
-    const agentPrefix = "agent:main:";
+    const agentPrefix = this.agentPrefix;
     const convSessions = sessions.filter(s => {
       if (!s.key.startsWith(agentPrefix)) return false;
       if (s.key.includes(":cron:")) return false;
@@ -1643,7 +1675,7 @@ class OpenClawChatView extends ItemView {
 
     // Build tab list — ensure "main" is always first
     this.tabSessions = [];
-    const mainSession = convSessions.find(s => s.key === "agent:main:main");
+    const mainSession = convSessions.find(s => s.key === `${this.agentPrefix}main`);
     if (mainSession) {
       const used = mainSession.totalTokens || 0;
       const max = mainSession.contextTokens || 200000;
@@ -1711,7 +1743,7 @@ class OpenClawChatView extends ItemView {
           if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
           this.tabDeleteInProgress = true;
           try {
-            const deleted = await deleteSessionWithFallback(this.plugin.gateway, `agent:main:${tab.key}`);
+            const deleted = await deleteSessionWithFallback(this.plugin.gateway, `${this.agentPrefix}${tab.key}`);
             new Notice(deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`);
           } catch (err: any) {
             new Notice(`Close failed: ${err?.message || err}`);
@@ -1782,7 +1814,7 @@ class OpenClawChatView extends ItemView {
         await new Promise(r => setTimeout(r, 500));
         try {
           await this.plugin.gateway?.request("sessions.patch", {
-            key: `agent:main:${sessionKey}`,
+            key: `${this.agentPrefix}${sessionKey}`,
             label: String(nextNum),
           });
         } catch { /* label optional */ }
@@ -2153,7 +2185,7 @@ class OpenClawChatView extends ItemView {
     const sk = payload.sessionKey ?? "";
     if (sk) {
       // Normalize: strip agent:main: prefix
-      const prefix = "agent:main:";
+      const prefix = this.agentPrefix;
       const normalized = sk.startsWith(prefix) ? sk.slice(prefix.length) : sk;
       if (this.streams.has(normalized)) return normalized;
     }
@@ -2258,7 +2290,7 @@ class OpenClawChatView extends ItemView {
   handleChatEvent(payload: any): void {
     // Resolve which session this event belongs to
     const payloadSk = payload.sessionKey ?? "";
-    const prefix = "agent:main:";
+    const prefix = this.agentPrefix;
     let eventSessionKey: string | null = null;
     // Try to match against known sessions
     for (const sk of [...this.streams.keys(), this.activeSessionKey]) {
@@ -2768,7 +2800,7 @@ export default class OpenClawPlugin extends Plugin {
         this.chatView?.updateStatus();
         this.chatView?.loadHistory();
         this.chatView?.renderTabs();
-        this.chatView?.loadBotIdentity();
+        this.chatView?.loadAgents();
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
           this.chatView.currentModel = this.settings.currentModel;

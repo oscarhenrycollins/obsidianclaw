@@ -1,7 +1,7 @@
 {
   "id": "openclaw",
   "name": "OpenClaw",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "minAppVersion": "1.0.0",
   "description": "Chat with your OpenClaw AI agent in a sidebar. Your vault is the agent's workspace.",
   "author": "Humanity Labs",
