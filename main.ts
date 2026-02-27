@@ -1415,23 +1415,25 @@ class OpenClawChatView extends ItemView {
         this.cachedSessionDisplayName = session.displayName;
         this.updateSessionPill();
       }
-      // Auto-remove completed subagent tabs
-      const trackedSubagents = this.tabSessions.filter(t => t.isSubagent);
-      if (trackedSubagents.length > 0) {
-        const sessionKeys = new Set(sessions.map((s: any) => s.key));
-        const gone = trackedSubagents.filter(t => !sessionKeys.has(`agent:main:${t.key}`));
-        if (gone.length > 0) {
-          // If we're viewing a completed subagent, switch back to main
-          if (gone.some(t => t.key === sk)) {
-            this.plugin.settings.sessionKey = "main";
-            await this.plugin.saveSettings();
-            this.messages = [];
-            this.messagesEl.empty();
-            await this.loadHistory();
-            this.updateStatus();
-          }
-          await this.renderTabs();
+      // Detect session list changes (new sub-agents, completed sub-agents, etc.) and re-render tabs
+      const agentPrefix = "agent:main:";
+      const currentSessionKeys = new Set(
+        sessions.filter((s: any) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:")).map((s: any) => s.key)
+      );
+      const trackedKeys = new Set(this.tabSessions.map(t => `${agentPrefix}${t.key}`));
+      const added = [...currentSessionKeys].some(k => !trackedKeys.has(k));
+      const removed = [...trackedKeys].some(k => !currentSessionKeys.has(k));
+      if (added || removed) {
+        // If viewing a session that no longer exists, switch back to main
+        if (removed && !currentSessionKeys.has(`${agentPrefix}${sk}`)) {
+          this.plugin.settings.sessionKey = "main";
+          await this.plugin.saveSettings();
+          this.messages = [];
+          this.messagesEl.empty();
+          await this.loadHistory();
+          this.updateStatus();
         }
+        await this.renderTabs();
       }
     } catch { /* ignore */ }
   }
@@ -1528,14 +1530,27 @@ class OpenClawChatView extends ItemView {
       const labelText = tab.isSubagent ? `🤖 ${tab.label}` : tab.label;
       row.createSpan({ text: labelText, cls: "openclaw-tab-label" });
 
-      // × button: Main = reset, others = close/delete
+      // × button: Main & channel sessions = reset, others = close/delete
+      const channelPrefixes = ["telegram:", "discord:", "whatsapp:", "signal:", "slack:", "irc:", "webchat:"];
+      const isChannelSession = channelPrefixes.some(p => tab.key.startsWith(p));
+      const isResetOnly = tab.key === "main" || isChannelSession;
       const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
-      if (tab.key === "main") {
-        closeBtn.title = "Reset main conversation";
+      if (isResetOnly) {
+        closeBtn.title = tab.key === "main" ? "Reset main conversation" : "Reset conversation";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
+          // Temporarily switch to this tab's session for reset, then switch back
+          const prevKey = this.plugin.settings.sessionKey;
+          this.plugin.settings.sessionKey = tab.key;
           await this.resetCurrentTab();
+          if (tab.key !== currentKey) {
+            this.plugin.settings.sessionKey = prevKey;
+            await this.plugin.saveSettings();
+          }
         });
+      } else if (tab.isSubagent) {
+        // Sub-agent tabs: no close button (they auto-close)
+        closeBtn.style.display = "none";
       } else {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
