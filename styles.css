@@ -17,54 +17,48 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 8px 4px 6px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
-  border-radius: 8px;
-  margin: 0 4px 4px 2px;
+  border-radius: 50%;
+  margin: 0 3px 4px 2px;
   transition: background 0.15s;
   background: rgba(128,128,128,0.08);
-  max-width: 140px;
-  overflow: hidden;
 }
 .openclaw-agent-btn:hover {
   background: rgba(128,128,128,0.2);
 }
 .openclaw-agent-emoji {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
-  flex-shrink: 0;
 }
 .openclaw-agent-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 /* Agent switcher dropdown */
 .openclaw-agent-dropdown {
   position: absolute;
-  top: 38px;
+  top: 36px;
   right: 4px;
   z-index: 1000;
-  min-width: 200px;
+  min-width: 160px;
+  max-width: 220px;
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  padding: 4px;
-  font-size: 13px;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  padding: 3px;
+  font-size: 12px;
 }
 .openclaw-agent-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   cursor: pointer;
-  border-radius: 7px;
+  border-radius: 6px;
   transition: background 0.12s;
 }
 .openclaw-agent-item:hover {
@@ -75,15 +69,14 @@
   cursor: default;
 }
 .openclaw-agent-item-emoji {
-  font-size: 18px;
+  font-size: 14px;
   flex-shrink: 0;
-  width: 24px;
-  text-align: center;
 }
 .openclaw-agent-item-info {
   min-width: 0;
 }
 .openclaw-agent-item-name {
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-normal);
   white-space: nowrap;
@@ -91,11 +84,7 @@
   text-overflow: ellipsis;
 }
 .openclaw-agent-item-sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 /* Tab bar */
