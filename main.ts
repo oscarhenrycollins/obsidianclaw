@@ -1524,39 +1524,42 @@ class OpenClawChatView extends ItemView {
       const labelText = tab.label;
       row.createSpan({ text: labelText, cls: "openclaw-tab-label" });
 
-      // × button: Main = reset, sub-agents = hidden, others = close/delete
+      // × button: Main & channel sessions = reset, others = close/delete
+      const channelPrefixes = ["telegram:", "discord:", "whatsapp:", "signal:", "slack:", "irc:"];
+      const isChannelSession = channelPrefixes.some(p => tab.key.startsWith(p));
+      const isResetOnly = tab.key === "main" || isChannelSession;
       const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
-      if (tab.key === "main") {
-        closeBtn.title = "Reset main conversation";
+      if (isResetOnly) {
+        closeBtn.title = tab.key === "main" ? "Reset conversation" : "Reset conversation";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          await this.resetCurrentTab();
+          if (!this.plugin.gateway?.connected) return;
+          try {
+            await this.plugin.gateway.request("chat.send", {
+              sessionKey: tab.key,
+              message: "/reset",
+              deliver: false,
+              idempotencyKey: "reset-" + Date.now(),
+            });
+            new Notice(`Reset: ${tab.label}`);
+            if (tab.key === currentKey) {
+              this.messages = [];
+              this.messagesEl.empty();
+            }
+            await this.updateContextMeter();
+            await this.renderTabs();
+          } catch (err: any) {
+            new Notice(`Reset failed: ${err?.message || err}`);
+          }
         });
       } else {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           try {
-            const prefixedKey = `agent:main:${tab.key}`;
-            console.log(`[ObsidianClaw] DELETE tab.key="${tab.key}" prefixedKey="${prefixedKey}"`);
-            // Try with agent prefix first
-            try {
-              const r1 = await this.plugin.gateway?.request("sessions.delete", { key: prefixedKey, deleteTranscript: true });
-              console.log(`[ObsidianClaw] DELETE prefixed OK:`, r1);
-            } catch (e1: any) {
-              console.log(`[ObsidianClaw] DELETE prefixed FAILED:`, e1?.message || e1);
-              // Try raw key
-              try {
-                const r2 = await this.plugin.gateway?.request("sessions.delete", { key: tab.key, deleteTranscript: true });
-                console.log(`[ObsidianClaw] DELETE raw OK:`, r2);
-              } catch (e2: any) {
-                console.log(`[ObsidianClaw] DELETE raw FAILED:`, e2?.message || e2);
-                throw e2;
-              }
-            }
+            await this.plugin.gateway?.request("sessions.delete", { key: `agent:main:${tab.key}`, deleteTranscript: true });
             new Notice(`Closed: ${tab.label}`);
           } catch (err: any) {
-            console.error(`[ObsidianClaw] DELETE FINAL ERROR:`, err);
             new Notice(`Close failed: ${err?.message || err}`);
           }
           // Switch to main if we closed the active tab
