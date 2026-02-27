@@ -903,6 +903,17 @@
   border-color: var(--interactive-accent);
   outline: none;
 }
+.openclaw-onboard-bot-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.openclaw-onboard-bot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .openclaw-onboard-hint {
   font-size: 11px;
   color: var(--text-faint);

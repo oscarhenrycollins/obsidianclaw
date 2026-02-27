@@ -437,8 +437,21 @@ interface ChatMessage {
 class OnboardingModal extends Modal {
   plugin: OpenClawPlugin;
   private step = 0;
+  private path: "fresh" | "existing" | null = null;
   private statusEl: HTMLElement | null = null;
   private pairingPollTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Setup state for fresh install path
+  private setupKeys = { claude1: '', claude2: '', googleai: '', brave: '', elevenlabs: '' };
+  private setupBots: { name: string; model: string }[] = [{ name: 'Assistant', model: 'anthropic/claude-sonnet-4-6' }];
+
+  private static MODELS = [
+    { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4' },
+    { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
+    { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  ];
 
   constructor(app: App, plugin: OpenClawPlugin) {
     super(app);
@@ -459,56 +472,222 @@ class OnboardingModal extends Modal {
     contentEl.empty();
     this.statusEl = null;
 
-    // Step indicator
-    const steps = ["Install", "Network", "Gateway", "Connect", "Pair", "Done"];
+    // Step indicator — adapts to path
+    const stepLabels = this.path === "fresh"
+      ? ["Start", "Keys", "Bots", "Install", "Connect", "Pair", "Done"]
+      : this.path === "existing"
+        ? ["Start", "Network", "Gateway", "Connect", "Pair", "Done"]
+        : ["Start"];
     const indicator = contentEl.createDiv("openclaw-onboard-steps");
-    steps.forEach((label, i) => {
+    stepLabels.forEach((label, i) => {
       const dot = indicator.createSpan("openclaw-step-dot" + (i === this.step ? " active" : i < this.step ? " done" : ""));
       dot.textContent = i < this.step ? "✓" : String(i + 1);
-      if (i < steps.length - 1) indicator.createSpan("openclaw-step-line" + (i < this.step ? " done" : ""));
+      if (i < stepLabels.length - 1) indicator.createSpan("openclaw-step-line" + (i < this.step ? " done" : ""));
     });
 
-    if (this.step === 0) this.renderInstall(contentEl);
-    else if (this.step === 1) this.renderNetwork(contentEl);
-    else if (this.step === 2) this.renderGateway(contentEl);
-    else if (this.step === 3) this.renderConnect(contentEl);
-    else if (this.step === 4) this.renderPairing(contentEl);
-    else if (this.step === 5) this.renderDone(contentEl);
+    // Route to correct step renderer
+    if (this.step === 0) return this.renderWelcome(contentEl);
+
+    if (this.path === "fresh") {
+      if (this.step === 1) return this.renderKeys(contentEl);
+      if (this.step === 2) return this.renderBots(contentEl);
+      if (this.step === 3) return this.renderInstallCmd(contentEl);
+      if (this.step === 4) return this.renderConnect(contentEl);
+      if (this.step === 5) return this.renderPairing(contentEl);
+      if (this.step === 6) return this.renderDone(contentEl);
+    } else {
+      if (this.step === 1) return this.renderNetwork(contentEl);
+      if (this.step === 2) return this.renderGateway(contentEl);
+      if (this.step === 3) return this.renderConnect(contentEl);
+      if (this.step === 4) return this.renderPairing(contentEl);
+      if (this.step === 5) return this.renderDone(contentEl);
+    }
   }
 
-  // ─── Step 0: Install ─────────────────────────────────────────────
+  // ─── Step 0: Welcome (branching) ─────────────────────────────────
 
-  private renderInstall(el: HTMLElement): void {
+  private renderWelcome(el: HTMLElement): void {
     el.createEl("h2", { text: "Welcome to OpenClaw" });
     el.createEl("p", {
-      text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace — it reads your notes, creates new ones, and works alongside you.",
+      text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace.",
       cls: "openclaw-onboard-desc",
     });
 
-    el.createEl("h3", { text: "Before we start" });
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.style.flexDirection = "column";
+    btnRow.style.gap = "10px";
+
+    const freshBtn = btnRow.createEl("button", { text: "I need to install OpenClaw", cls: "mod-cta" });
+    freshBtn.style.width = "100%";
+    freshBtn.addEventListener("click", () => { this.path = "fresh"; this.step = 1; this.renderStep(); });
+
+    const existBtn = btnRow.createEl("button", { text: "OpenClaw is already running" });
+    existBtn.style.width = "100%";
+    existBtn.addEventListener("click", () => { this.path = "existing"; this.step = 1; this.renderStep(); });
+  }
+
+  // ─── Fresh path: Step 1 — API Keys ───────────────────────────────
+
+  private renderKeys(el: HTMLElement): void {
+    el.createEl("h2", { text: "Your API keys" });
     el.createEl("p", {
-      text: "You need OpenClaw running on a computer that stays on (a Mac, PC, or VPS). This is your \"gateway\" — the brain that runs your AI agent.",
+      text: "Your bot needs AI model access. Paste your keys below — they'll be included in the install command. Nothing leaves your device.",
       cls: "openclaw-onboard-desc",
     });
 
-    const list = el.createEl("ul", { cls: "openclaw-onboard-list" });
-    const li = list.createEl("li");
-    li.innerHTML = "Don't have OpenClaw yet? Follow the <a href='https://botsetupguide.com'>setup guide</a> first, then come back here.";
-    list.createEl("li", { text: "Already have OpenClaw running? Click next." });
+    const fields: { key: keyof typeof this.setupKeys; label: string; required?: boolean; placeholder: string; help: string }[] = [
+      { key: "claude1", label: "Claude Token", required: true, placeholder: "sk-ant-...", help: "From <a href='https://console.anthropic.com/settings/keys'>console.anthropic.com</a> or Claude Max OAuth" },
+      { key: "claude2", label: "Claude Token #2 (parallel requests)", placeholder: "sk-ant-...", help: "Optional — enables concurrent requests" },
+      { key: "googleai", label: "Google AI API Key", placeholder: "AIza...", help: "Free at <a href='https://aistudio.google.com/apikey'>aistudio.google.com</a> — enables Gemini models" },
+      { key: "brave", label: "Brave Search API Key", placeholder: "BSA...", help: "Free at <a href='https://brave.com/search/api/'>brave.com/search/api</a> — web search" },
+      { key: "elevenlabs", label: "ElevenLabs API Key", placeholder: "sk_...", help: "Free at <a href='https://elevenlabs.io'>elevenlabs.io</a> — voice/TTS" },
+    ];
+
+    for (const f of fields) {
+      const group = el.createDiv("openclaw-onboard-field");
+      const label = group.createEl("label", { text: f.label });
+      if (f.required) { const req = label.createSpan(); req.textContent = " (required)"; req.style.cssText = "font-size:11px;color:var(--text-muted)"; }
+      const input = group.createEl("input", {
+        type: "password",
+        value: this.setupKeys[f.key],
+        placeholder: f.placeholder,
+        cls: "openclaw-onboard-input",
+      });
+      input.addEventListener("input", () => { this.setupKeys[f.key] = input.value.trim(); });
+      const help = group.createDiv("openclaw-onboard-hint");
+      help.innerHTML = f.help;
+    }
+
+    const note = el.createDiv("openclaw-onboard-info");
+    note.innerHTML = "🔒 Keys stay on your device. The install command runs entirely on your server.";
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const nextBtn = btnRow.createEl("button", { text: "I have OpenClaw running →", cls: "mod-cta" });
-    nextBtn.addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "Next →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => {
+      if (!this.setupKeys.claude1) { this.showStatus("Claude token is required", "error"); return; }
+      this.step = 2; this.renderStep();
+    });
   }
 
-  // ─── Step 1: Network (Tailscale) ─────────────────────────────────
+  // ─── Fresh path: Step 2 — Bot config ─────────────────────────────
+
+  private renderBots(el: HTMLElement): void {
+    el.createEl("h2", { text: "Configure your bots" });
+    el.createEl("p", {
+      text: "Each bot gets its own personality, memory, and workspace folder.",
+      cls: "openclaw-onboard-desc",
+    });
+
+    const listEl = el.createDiv();
+    this.setupBots.forEach((bot, i) => {
+      const card = listEl.createDiv("openclaw-onboard-bot-card");
+      const row = card.createDiv("openclaw-onboard-bot-row");
+      const nameInput = row.createEl("input", { type: "text", value: bot.name, placeholder: "Bot name", cls: "openclaw-onboard-input" });
+      nameInput.style.flex = "1";
+      nameInput.addEventListener("input", () => { bot.name = nameInput.value; });
+
+      const select = row.createEl("select", { cls: "openclaw-onboard-input" });
+      select.style.cssText = "flex:0 0 auto;width:auto";
+      for (const m of OnboardingModal.MODELS) {
+        const opt = select.createEl("option", { text: m.label, value: m.id });
+        if (m.id === bot.model) opt.selected = true;
+      }
+      select.addEventListener("change", () => { bot.model = select.value; });
+
+      if (this.setupBots.length > 1) {
+        const removeBtn = row.createEl("span", { text: "×" });
+        removeBtn.style.cssText = "cursor:pointer;font-size:18px;color:var(--text-muted);padding:0 6px";
+        removeBtn.addEventListener("click", () => { this.setupBots.splice(i, 1); this.renderStep(); });
+      }
+    });
+
+    const addBtn = el.createEl("button", { text: "+ Add another bot" });
+    addBtn.style.cssText = "background:none;border:1.5px dashed var(--background-modifier-border);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text-muted);cursor:pointer;margin-top:8px";
+    addBtn.addEventListener("click", () => { this.setupBots.push({ name: '', model: 'anthropic/claude-sonnet-4-6' }); this.renderStep(); });
+
+    const note = el.createDiv("openclaw-onboard-hint");
+    note.style.marginTop = "12px";
+    note.innerHTML = "Each bot gets a folder like <code>AGENT-YOURBOT/</code> in your vault.";
+
+    this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "Generate install command →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
+  }
+
+  // ─── Fresh path: Step 3 — Install command ────────────────────────
+
+  private renderInstallCmd(el: HTMLElement): void {
+    el.createEl("h2", { text: "Install OpenClaw" });
+    el.createEl("p", {
+      text: "Open a terminal on your server (Mac: Cmd+Space → Terminal, cloud: ssh in). Run this command:",
+      cls: "openclaw-onboard-desc",
+    });
+
+    const config = this.generateConfig();
+    const configB64 = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+    const installCmd = `curl -fsSL https://openclaw.ai/install.sh | bash && echo '${configB64}' | base64 -d > ~/.openclaw/openclaw.json && openclaw gateway restart`;
+
+    this.makeCopyBox(el, installCmd);
+
+    el.createEl("p", { text: "This installs OpenClaw, writes your config with all API keys and bot settings, configures Tailscale Serve, and starts the gateway.", cls: "openclaw-onboard-hint" });
+
+    // Expandable config preview
+    const details = el.createEl("details");
+    details.style.marginTop = "12px";
+    details.createEl("summary", { text: "Preview config" }).style.cssText = "font-size:13px;color:var(--text-muted);cursor:pointer";
+    const pre = details.createEl("pre");
+    pre.style.cssText = "font-size:11px;color:var(--text-muted);background:var(--background-secondary);padding:12px;border-radius:8px;overflow:auto;max-height:200px;margin-top:8px";
+    pre.textContent = JSON.stringify(config, null, 2);
+
+    el.createEl("p", { text: "After it finishes, install Tailscale if you haven't:", cls: "openclaw-onboard-desc" });
+    this.makeCopyBox(el, "# Mac:\nbrew install --cask tailscale\n\n# Linux:\ncurl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up");
+
+    el.createEl("p", { text: "Then install Tailscale on this device too, using the same account.", cls: "openclaw-onboard-hint" });
+
+    this.statusEl = el.createDiv("openclaw-onboard-status");
+
+    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "OpenClaw is running →", cls: "mod-cta" });
+    nextBtn.addEventListener("click", () => { this.step = 4; this.renderStep(); });
+  }
+
+  private generateConfig(): Record<string, any> {
+    const config: Record<string, any> = {
+      auth: { profiles: {} },
+      agents: { defaults: { model: { primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6' } } },
+      gateway: { port: 18789, bind: 'loopback', tailscale: { mode: 'serve' }, auth: { mode: 'token', allowTailscale: true } },
+    };
+    if (this.setupKeys.claude1) config.auth.profiles['anthropic:default'] = { provider: 'anthropic', mode: 'token' };
+    if (this.setupKeys.claude2) config.auth.profiles['anthropic:secondary'] = { provider: 'anthropic', mode: 'token' };
+    if (this.setupKeys.googleai) config.auth.profiles['google:default'] = { provider: 'google', mode: 'api_key' };
+    if (this.setupKeys.brave) config.tools = { web: { search: { apiKey: this.setupKeys.brave } } };
+    if (this.setupKeys.elevenlabs) config.messages = { tts: { provider: 'elevenlabs', elevenlabs: { apiKey: this.setupKeys.elevenlabs } } };
+    if (this.setupBots.length > 1) {
+      config.agents.list = this.setupBots.map((bot, i) => {
+        const id = i === 0 ? 'main' : (bot.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bot-${i}`);
+        const folder = 'AGENT-' + (bot.name || 'BOT').toUpperCase().replace(/[^A-Z0-9]/g, '-');
+        return { id, name: bot.name || `Bot ${i + 1}`, workspace: `~/.openclaw/workspace/${folder}` };
+      });
+    } else if (this.setupBots[0]?.name) {
+      const folder = 'AGENT-' + this.setupBots[0].name.toUpperCase().replace(/[^A-Z0-9]/g, '-');
+      config.agents.defaults.workspace = `~/.openclaw/workspace/${folder}`;
+    }
+    return config;
+  }
+
+  // ─── Existing path: Step 1 — Network (Tailscale) ─────────────────
 
   private renderNetwork(el: HTMLElement): void {
     el.createEl("h2", { text: "Set up your private network" });
     el.createEl("p", {
-      text: "Tailscale creates an encrypted private network between your devices. It's how this device talks to your gateway securely — no ports to open, no VPN to configure.",
+      text: "Tailscale creates an encrypted private network between your devices. No ports to open, no VPN to configure.",
       cls: "openclaw-onboard-desc",
     });
 
@@ -516,69 +695,46 @@ class OnboardingModal extends Modal {
 
     const steps = el.createEl("ol", { cls: "openclaw-onboard-list" });
     const s1 = steps.createEl("li");
-    s1.innerHTML = "Install on your <strong>gateway machine</strong> (where OpenClaw runs): <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    s1.innerHTML = "Install on your <strong>gateway machine</strong>: <a href='https://tailscale.com/download'>tailscale.com/download</a>";
     const s2 = steps.createEl("li");
-    s2.innerHTML = "Install on <strong>this device</strong> (where you're reading this): <a href='https://tailscale.com/download'>tailscale.com/download</a>";
-    steps.createEl("li", { text: "Sign in to the same Tailscale account on both devices." });
+    s2.innerHTML = "Install on <strong>this device</strong>: <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    steps.createEl("li", { text: "Sign in to the same Tailscale account on both." });
 
-    el.createEl("p", {
-      text: "Both devices will appear on your private tailnet. You can verify by running this on your gateway machine:",
-      cls: "openclaw-onboard-hint",
-    });
+    el.createEl("p", { text: "Verify by running this on the gateway:", cls: "openclaw-onboard-hint" });
     this.makeCopyBox(el, "tailscale status");
-
-    const checkInfo = el.createDiv("openclaw-onboard-info");
-    checkInfo.createEl("span", { text: "You should see both devices listed. If this device doesn't appear, make sure Tailscale is connected (check the system tray / menu bar icon)." });
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.renderStep(); });
-    const nextBtn = btnRow.createEl("button", { text: "Both devices are on Tailscale →", cls: "mod-cta" });
+    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
+    const nextBtn = btnRow.createEl("button", { text: "Both on Tailscale →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 2; this.renderStep(); });
   }
 
-  // ─── Step 2: Gateway (Tailscale Serve) ────────────────────────────
+  // ─── Existing path: Step 2 — Gateway (Tailscale Serve) ───────────
 
   private renderGateway(el: HTMLElement): void {
-    el.createEl("h2", { text: "Expose your gateway securely" });
+    el.createEl("h2", { text: "Expose your gateway" });
     el.createEl("p", {
-      text: "Tailscale Serve makes your gateway reachable from all your Tailscale devices with automatic HTTPS. Run these commands on your gateway machine (in Terminal):",
+      text: "Tailscale Serve gives your gateway a private HTTPS address. Run on the gateway machine:",
       cls: "openclaw-onboard-desc",
     });
 
-    const steps = el.createDiv("openclaw-onboard-numbered");
+    el.createEl("strong", { text: "1. Configure OpenClaw" });
+    this.makeCopyBox(el, "openclaw config set gateway.bind loopback\nopenclaw config set gateway.tailscale.mode serve\nopenclaw gateway restart");
 
-    // Step 1: Enable Tailscale Serve
-    const s1 = steps.createDiv("openclaw-onboard-numbered-item");
-    s1.createEl("strong", { text: "1. Start Tailscale Serve" });
-    s1.createEl("p", { text: "This tells Tailscale to securely proxy traffic to your gateway:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(s1, "tailscale serve --bg http://127.0.0.1:18789");
+    el.createEl("strong", { text: "2. Start Tailscale Serve" });
+    this.makeCopyBox(el, "tailscale serve --bg http://127.0.0.1:18789");
 
-    // Step 2: Verify it's working
-    const s2 = steps.createDiv("openclaw-onboard-numbered-item");
-    s2.createEl("strong", { text: "2. Verify it's running" });
-    s2.createEl("p", { text: "You should see your gateway URL in the output:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(s2, "tailscale serve status");
+    el.createEl("strong", { text: "3. Get your URL and token" });
+    this.makeCopyBox(el, "tailscale serve status");
+    this.makeCopyBox(el, "cat ~/.openclaw/openclaw.json | grep token");
 
-    // Step 3: Note the URL
-    const s3 = steps.createDiv("openclaw-onboard-numbered-item");
-    s3.createEl("strong", { text: "3. Copy your gateway URL" });
-    const s3hint = s3.createEl("p", { cls: "openclaw-onboard-hint" });
-    s3hint.innerHTML = "The output will show something like:<br><code>https://your-machine.tail1234.ts.net</code><br>Copy that URL — you'll paste it in the next step.";
+    const hint = el.createDiv("openclaw-onboard-hint");
+    hint.innerHTML = "Copy the <code>https://your-machine.tailXXXX.ts.net</code> URL and the auth token for the next step.";
 
-    // Step 4: Get the auth token
-    const s4 = steps.createDiv("openclaw-onboard-numbered-item");
-    s4.createEl("strong", { text: "4. Copy your auth token" });
-    s4.createEl("p", { text: "Run this to find your gateway auth token:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(s4, "cat ~/.openclaw/openclaw.json | grep token");
-    const s4hint = s4.createEl("p", { cls: "openclaw-onboard-hint" });
-    s4hint.innerHTML = "Copy the token value (the long string after <code>\"token\":</code>).";
-
-    // Troubleshooting
     const trouble = el.createDiv("openclaw-onboard-info");
-    trouble.createEl("strong", { text: "💡 Not working? " });
-    trouble.createEl("span", { text: "Run this first to fix common issues:" });
+    trouble.innerHTML = "💡 <strong>Not working?</strong> Run: ";
     this.makeCopyBox(trouble, "openclaw doctor --fix && openclaw gateway restart");
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
