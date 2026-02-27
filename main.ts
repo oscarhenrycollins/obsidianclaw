@@ -926,6 +926,11 @@ class OpenClawChatView extends ItemView {
   currentModel: string = "";
   currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = "";
+
+  // Bot identity from IDENTITY.md
+  private botIdentity: { name: string; emoji: string; creature: string; vibe: string } = { name: "Agent", emoji: "🤖", creature: "", vibe: "" };
+  private profileBtnEl: HTMLElement | null = null;
+  private profileDropdownEl: HTMLElement | null = null;
   private typingEl!: HTMLElement;
   private attachPreviewEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
@@ -962,9 +967,25 @@ class OpenClawChatView extends ItemView {
     container.empty();
     container.addClass("openclaw-chat-container");
 
+    // Top bar with tabs + profile
+    const topBar = container.createDiv("openclaw-top-bar");
+
     // Tab bar (browser-like tabs)
-    this.tabBarEl = container.createDiv("openclaw-tab-bar");
+    this.tabBarEl = topBar.createDiv("openclaw-tab-bar");
     this.tabBarEl.addEventListener("wheel", (e) => { e.preventDefault(); this.tabBarEl.scrollLeft += e.deltaY; }, { passive: false });
+
+    // Profile button (right side of top bar)
+    this.profileBtnEl = topBar.createDiv("openclaw-profile-btn");
+    this.profileBtnEl.setAttribute("aria-label", "Bot profile");
+    this.profileBtnEl.innerHTML = `<span class="openclaw-profile-emoji">${this.botIdentity.emoji}</span>`;
+    this.profileBtnEl.addEventListener("click", (e) => { e.stopPropagation(); this.toggleProfileDropdown(); });
+
+    // Profile dropdown (hidden by default)
+    this.profileDropdownEl = container.createDiv("openclaw-profile-dropdown");
+    this.profileDropdownEl.style.display = "none";
+
+    // Close dropdown when clicking outside
+    document.addEventListener("click", () => { if (this.profileDropdownEl) this.profileDropdownEl.style.display = "none"; });
 
     // We'll render tabs after loading sessions
     this.renderTabs();
@@ -1113,6 +1134,89 @@ class OpenClawChatView extends ItemView {
       this.inputEl.disabled = true;
       this.inputEl.placeholder = "Disconnected";
     }
+  }
+
+  /** Fetch IDENTITY.md from the gateway and parse bot identity fields */
+  async loadBotIdentity(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      const result = await this.plugin.gateway.request("agents.files.get", { agentId: "main", name: "IDENTITY.md" });
+      const content = result?.file?.content;
+      if (!content) return;
+      const parse = (key: string): string => {
+        const m = content.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*(.+)`, "i"));
+        return m ? m[1].trim() : "";
+      };
+      this.botIdentity = {
+        name: parse("Name") || "Agent",
+        emoji: parse("Emoji") || "🤖",
+        creature: parse("Creature") || "",
+        vibe: parse("Vibe") || "",
+      };
+      this.updateProfileButton();
+    } catch (e) {
+      console.warn("[ObsidianClaw] Failed to load IDENTITY.md:", e);
+    }
+  }
+
+  /** Update the profile button emoji/initial */
+  private updateProfileButton(): void {
+    if (!this.profileBtnEl) return;
+    this.profileBtnEl.innerHTML = `<span class="openclaw-profile-emoji">${this.botIdentity.emoji || this.botIdentity.name.charAt(0)}</span>`;
+  }
+
+  /** Toggle the profile dropdown */
+  private toggleProfileDropdown(): void {
+    if (!this.profileDropdownEl) return;
+    const visible = this.profileDropdownEl.style.display !== "none";
+    if (visible) {
+      this.profileDropdownEl.style.display = "none";
+      return;
+    }
+    // Build dropdown content
+    this.profileDropdownEl.empty();
+
+    // Bot section
+    const botSection = this.profileDropdownEl.createDiv("openclaw-profile-section");
+    const botHeader = botSection.createDiv("openclaw-profile-section-header");
+    botHeader.createSpan({ text: "BOT", cls: "openclaw-profile-section-label" });
+    const botItem = botSection.createDiv("openclaw-profile-item active");
+    botItem.createSpan({ text: this.botIdentity.emoji || "🤖", cls: "openclaw-profile-item-emoji" });
+    const botInfo = botItem.createDiv("openclaw-profile-item-info");
+    botInfo.createDiv({ text: this.botIdentity.name, cls: "openclaw-profile-item-name" });
+    if (this.botIdentity.creature) {
+      botInfo.createDiv({ text: this.botIdentity.creature, cls: "openclaw-profile-item-sub" });
+    }
+
+    // Server section
+    const serverSection = this.profileDropdownEl.createDiv("openclaw-profile-section");
+    const serverHeader = serverSection.createDiv("openclaw-profile-section-header");
+    serverHeader.createSpan({ text: "SERVER", cls: "openclaw-profile-section-label" });
+    const serverItem = serverSection.createDiv("openclaw-profile-item active");
+    const serverEmoji = serverItem.createSpan({ text: "🟢", cls: "openclaw-profile-item-emoji" });
+    if (!this.plugin.gatewayConnected) serverEmoji.setText("🔴");
+    const serverInfo = serverItem.createDiv("openclaw-profile-item-info");
+    // Extract hostname from gateway URL
+    let serverName = "Gateway";
+    try {
+      const raw = this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, "https://");
+      const hostname = new URL(raw).hostname;
+      serverName = hostname.split(".")[0] || hostname;
+    } catch { /* fallback */ }
+    serverInfo.createDiv({ text: serverName, cls: "openclaw-profile-item-name" });
+    serverInfo.createDiv({ text: this.plugin.gatewayConnected ? "Connected" : "Disconnected", cls: "openclaw-profile-item-sub" });
+
+    // Settings link
+    const settingsItem = this.profileDropdownEl.createDiv("openclaw-profile-settings");
+    settingsItem.innerHTML = `⚙️ Settings`;
+    settingsItem.addEventListener("click", () => {
+      this.profileDropdownEl!.style.display = "none";
+      // Open plugin settings
+      (this.app as any).setting?.open?.();
+      (this.app as any).setting?.openTabById?.("openclaw");
+    });
+
+    this.profileDropdownEl.style.display = "block";
   }
 
   async loadHistory(): Promise<void> {
@@ -2664,6 +2768,7 @@ export default class OpenClawPlugin extends Plugin {
         this.chatView?.updateStatus();
         this.chatView?.loadHistory();
         this.chatView?.renderTabs();
+        this.chatView?.loadBotIdentity();
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
           this.chatView.currentModel = this.settings.currentModel;

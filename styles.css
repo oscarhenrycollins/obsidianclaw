@@ -1,5 +1,115 @@
 /* ObsidianClaw — Modern Chat UI */
 
+/* Top bar (tabs + profile) */
+.openclaw-top-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  flex-shrink: 0;
+}
+.openclaw-top-bar .openclaw-tab-bar {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Profile button */
+.openclaw-profile-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  margin: 0 4px 4px 2px;
+  transition: background 0.15s;
+  background: rgba(128,128,128,0.1);
+}
+.openclaw-profile-btn:hover {
+  background: rgba(128,128,128,0.25);
+}
+.openclaw-profile-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Profile dropdown */
+.openclaw-profile-dropdown {
+  position: absolute;
+  top: 38px;
+  right: 4px;
+  z-index: 1000;
+  min-width: 220px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 6px 0;
+  font-size: 13px;
+}
+.openclaw-profile-section {
+  padding: 4px 0;
+}
+.openclaw-profile-section + .openclaw-profile-section {
+  border-top: 1px solid var(--background-modifier-border);
+}
+.openclaw-profile-section-header {
+  padding: 6px 14px 4px;
+}
+.openclaw-profile-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.openclaw-profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  cursor: default;
+  border-radius: 6px;
+  margin: 0 6px;
+}
+.openclaw-profile-item.active {
+  background: rgba(128,128,128,0.08);
+}
+.openclaw-profile-item-emoji {
+  font-size: 20px;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+.openclaw-profile-item-info {
+  min-width: 0;
+}
+.openclaw-profile-item-name {
+  font-weight: 500;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.openclaw-profile-item-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.openclaw-profile-settings {
+  padding: 8px 14px;
+  border-top: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.openclaw-profile-settings:hover {
+  color: var(--text-normal);
+}
+
 /* Tab bar */
 .openclaw-tab-bar {
   flex-shrink: 0;
