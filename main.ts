@@ -1347,12 +1347,16 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  /** Update the agent button to show current agent */
+  /** Update the agent button — hidden for single agent, visible for multi */
   private updateAgentButton(): void {
     if (!this.profileBtnEl) return;
-    const name = this.activeAgent.name;
+    if (this.agents.length <= 1) {
+      this.profileBtnEl.style.display = "none";
+      return;
+    }
+    this.profileBtnEl.style.display = "";
     const emoji = this.activeAgent.emoji || "🤖";
-    this.profileBtnEl.innerHTML = `<span class="openclaw-agent-emoji">${emoji}</span><span class="openclaw-agent-name">${name}</span>`;
+    this.profileBtnEl.innerHTML = `<span class="openclaw-agent-emoji">${emoji}</span>`;
   }
 
   /** Switch to a different agent */
