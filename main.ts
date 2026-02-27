@@ -1317,10 +1317,19 @@ class OpenClawChatView extends ItemView {
         agentList.push({ id: "main" });
       }
 
-      // Load IDENTITY.md for each agent
+      // Build agent info — derive display name from workspace folder, enhance with IDENTITY.md
       const agents: AgentInfo[] = [];
       for (const a of agentList) {
-        const info: AgentInfo = { id: a.id || "main", name: a.name || a.id || "Agent", emoji: "🤖", creature: "" };
+        // Derive name from workspace path: ~/.openclaw/workspace/AGENT-OSCAR → Oscar
+        let folderName = "";
+        if (a.workspace) {
+          const parts = a.workspace.replace(/\/+$/, "").split("/");
+          folderName = parts[parts.length - 1] || "";
+        }
+        const displayName = folderName.replace(/^AGENT-/i, "").replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) || a.name || a.id || "Agent";
+        const info: AgentInfo = { id: a.id || "main", name: displayName, emoji: "🤖", creature: "" };
+
+        // Try to enhance with IDENTITY.md (optional, non-blocking)
         try {
           const file = await this.plugin.gateway.request("agents.files.get", { agentId: a.id, name: "IDENTITY.md" });
           const content = file?.file?.content;
@@ -1329,11 +1338,13 @@ class OpenClawChatView extends ItemView {
               const m = content.match(new RegExp(`\\*\\*${key}:\\*\\*\\s*(.+)`, "i"));
               return m ? m[1].trim() : "";
             };
-            info.name = parse("Name") || info.name;
             info.emoji = parse("Emoji") || "🤖";
             info.creature = parse("Creature") || "";
+            // Only override name from IDENTITY.md if it's meaningfully different
+            const identityName = parse("Name");
+            if (identityName) info.name = identityName;
           }
-        } catch { /* use defaults */ }
+        } catch { /* folder name is enough */ }
         agents.push(info);
       }
 
