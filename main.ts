@@ -1503,10 +1503,15 @@ class OpenClawChatView extends ItemView {
       this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
     }
 
-    // Add other sessions in creation order (oldest first)
+    // Add other sessions in creation order (oldest first), sub-agents last
     const others = convSessions
       .filter(s => s.key.slice(agentPrefix.length) !== "main")
-      .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0));
+      .sort((a, b) => {
+        const aIsSub = a.key.includes(":subagent:");
+        const bIsSub = b.key.includes(":subagent:");
+        if (aIsSub !== bIsSub) return aIsSub ? 1 : -1; // sub-agents last
+        return (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0);
+      });
     let num = 1;
     for (const s of others) {
       const sk = s.key.slice(agentPrefix.length);
@@ -1514,7 +1519,12 @@ class OpenClawChatView extends ItemView {
       const max = s.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
       const isSubagent = sk.startsWith("subagent:") || s.key.includes(":subagent:");
-      const label = isSubagent ? (s.label || "Sub-agent") : (s.label || s.displayName || String(num));
+      // Only show sub-agents that are actively running (have recent activity)
+      if (isSubagent) {
+        const age = Date.now() - (s.updatedAt || 0);
+        if (age > 120000) continue; // Skip sub-agents idle for >2 min (likely completed)
+      }
+      const label = isSubagent ? "🤖" : (s.label || s.displayName || String(num));
       this.tabSessions.push({ key: sk, label, pct, isSubagent });
       if (!isSubagent) num++;
     }
@@ -1527,29 +1537,18 @@ class OpenClawChatView extends ItemView {
 
       // Row: label + ×
       const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
-      const labelText = tab.isSubagent ? `🤖 ${tab.label}` : tab.label;
+      const labelText = tab.label;
       row.createSpan({ text: labelText, cls: "openclaw-tab-label" });
 
-      // × button: Main & channel sessions = reset, others = close/delete
-      const channelPrefixes = ["telegram:", "discord:", "whatsapp:", "signal:", "slack:", "irc:", "webchat:"];
-      const isChannelSession = channelPrefixes.some(p => tab.key.startsWith(p));
-      const isResetOnly = tab.key === "main" || isChannelSession;
+      // × button: Main = reset, sub-agents = hidden, others = close/delete
       const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
-      if (isResetOnly) {
-        closeBtn.title = tab.key === "main" ? "Reset main conversation" : "Reset conversation";
+      if (tab.key === "main") {
+        closeBtn.title = "Reset main conversation";
         closeBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          // Temporarily switch to this tab's session for reset, then switch back
-          const prevKey = this.plugin.settings.sessionKey;
-          this.plugin.settings.sessionKey = tab.key;
           await this.resetCurrentTab();
-          if (tab.key !== currentKey) {
-            this.plugin.settings.sessionKey = prevKey;
-            await this.plugin.saveSettings();
-          }
         });
       } else if (tab.isSubagent) {
-        // Sub-agent tabs: no close button (they auto-close)
         closeBtn.style.display = "none";
       } else {
         closeBtn.title = "Close tab";
