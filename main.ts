@@ -1097,6 +1097,11 @@ class OpenClawChatView extends ItemView {
           })
           .filter((m: ChatMessage) => (m.text.trim() || m.images.length > 0) && !m.text.startsWith("HEARTBEAT"));
 
+        // Hide the first user message (typically the /new or /reset system prompt)
+        if (this.messages.length > 0 && this.messages[0].role === "user") {
+          this.messages = this.messages.slice(1);
+        }
+
         // No post-processing needed: VOICE: refs are in the assistant message text itself
 
         await this.renderMessages();
@@ -1453,13 +1458,14 @@ class OpenClawChatView extends ItemView {
       } catch { /* use empty */ }
     }
 
-    // Filter to direct conversations only
-    const channelPfx = ["telegram:", "discord:", "whatsapp:", "signal:", "webchat:", "slack:", "irc:", "subag"];
+    // Filter: show all agent sessions except cron and subagent (mirror gateway 1:1)
     const agentPrefix = "agent:main:";
     const convSessions = sessions.filter(s => {
-      if (!s.key.startsWith(agentPrefix) || s.key.includes(":cron:")) return false;
+      if (!s.key.startsWith(agentPrefix)) return false;
+      if (s.key.includes(":cron:")) return false;
       const sk = s.key.slice(agentPrefix.length);
-      return !channelPfx.some(p => sk.startsWith(p));
+      if (sk.startsWith("subag")) return false;
+      return true;
     });
 
     // Build tab list — ensure "main" is always first
