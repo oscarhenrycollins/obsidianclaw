@@ -1,20 +1,29 @@
 {
   "name": "obsidianclaw",
-  "version": "0.25.0",
+  "version": "0.30.0",
   "description": "Official OpenClaw plugin for Obsidian",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production"
   },
-  "keywords": ["obsidian", "openclaw", "ai", "agent", "chat"],
+  "keywords": [
+    "obsidian",
+    "openclaw",
+    "ai",
+    "agent",
+    "chat"
+  ],
   "author": "Humanity Labs",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@typescript-eslint/parser": "^8.56.1",
     "builtin-modules": "^3.3.0",
     "esbuild": "^0.20.0",
+    "eslint": "^9.39.3",
+    "eslint-plugin-obsidianmd": "^0.1.9",
     "obsidian": "latest",
-    "typescript": "^5.4.0"
+    "typescript": "^5.9.3"
   }
 }

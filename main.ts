@@ -83,10 +83,10 @@ interface DeviceIdentity {
 }
 
 async function getOrCreateDeviceIdentity(
-  loadData: () => Promise<any>,
-  saveData: (data: any) => Promise<void>
+  loadData: () => Promise<Record<string, unknown> | null>,
+  saveData: (data: Record<string, unknown>) => Promise<void>
 ): Promise<DeviceIdentity> {
-  const data = await loadData();
+  const data = await loadData() as Record<string, string | undefined> | null;
   if (data?.deviceId && data?.devicePublicKey && data?.devicePrivateKey) {
     // Restore existing identity
     const privBytes = fromBase64Url(data.devicePrivateKey);
@@ -114,11 +114,11 @@ async function getOrCreateDeviceIdentity(
   const privateKey = toBase64Url(privPkcs8);
 
   // Save to plugin data
-  const existing = (await loadData()) || {};
+  const existing = (await loadData()) || {} as Record<string, unknown>;
   existing.deviceId = deviceId;
   existing.devicePublicKey = publicKey;
   existing.devicePrivateKey = privateKey;
-  await saveData(existing);
+  await saveData(existing as Record<string, unknown>);
 
   return { deviceId, publicKey, privateKey, cryptoKey: keyPair.privateKey };
 }
@@ -160,10 +160,64 @@ function buildSignaturePayload(params: {
   return parts.join("|");
 }
 
+// ─── Gateway Types ───────────────────────────────────────────────────
+
+interface GatewayPayload {
+  [key: string]: unknown;
+}
+
+interface GatewayMessage {
+  type: string;
+  id?: string;
+  event?: string;
+  payload?: GatewayPayload;
+  ok?: boolean;
+  error?: { message?: string };
+  seq?: number;
+}
+
+interface SessionInfo {
+  key: string;
+  label?: string;
+  displayName?: string;
+  model?: string;
+  totalTokens?: number;
+  contextTokens?: number;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+interface AgentListItem {
+  id?: string;
+  name?: string;
+}
+
+interface ModelInfo {
+  id: string;
+  name?: string;
+  provider: string;
+}
+
+interface ContentBlock {
+  type: string;
+  text?: string;
+  content?: string | ContentBlock[];
+  name?: string;
+  input?: Record<string, unknown>;
+  arguments?: Record<string, unknown>;
+  image_url?: { url: string };
+}
+
+interface HistoryMessage {
+  role: string;
+  content: string | ContentBlock[];
+  timestamp?: number;
+}
+
 // ─── Gateway Client ──────────────────────────────────────────────────
 
-type GatewayEventHandler = (event: { event: string; payload: any; seq?: number }) => void;
-type GatewayHelloHandler = (payload: any) => void;
+type GatewayEventHandler = (event: { event: string; payload: GatewayPayload; seq?: number }) => void;
+type GatewayHelloHandler = (payload: GatewayPayload) => void;
 type GatewayCloseHandler = (info: { code: number; reason: string }) => void;
 
 interface GatewayClientOpts {
@@ -195,14 +249,14 @@ async function deleteSessionWithFallback(
   key: string,
   deleteTranscript = true
 ): Promise<boolean> {
-  const result: any = await gateway.request("sessions.delete", { key, deleteTranscript });
+  const result = await gateway.request("sessions.delete", { key, deleteTranscript }) as { deleted?: boolean } | null;
   if (result?.deleted) return true;
 
   // Fallback: strip agent:<id>: prefix and retry with raw key
   const match = key.match(/^agent:[^:]+:(.+)$/);
   if (match) {
     const rawKey = match[1];
-    const retry: any = await gateway.request("sessions.delete", { key: rawKey, deleteTranscript });
+    const retry = await gateway.request("sessions.delete", { key: rawKey, deleteTranscript }) as { deleted?: boolean } | null;
     return !!retry?.deleted;
   }
   return false;
@@ -210,7 +264,7 @@ async function deleteSessionWithFallback(
 
 class GatewayClient {
   private ws: WebSocket | null = null;
-  private pending = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
+  private pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   private closed = false;
   private connectSent = false;
   private connectNonce: string | null = null;
@@ -245,7 +299,7 @@ class GatewayClient {
     this.flushPending(new Error("client stopped"));
   }
 
-  async request(method: string, params?: any): Promise<any> {
+  async request(method: string, params?: unknown): Promise<unknown> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("not connected");
     }
@@ -308,7 +362,7 @@ class GatewayClient {
     this.connectNonce = null;
     this.connectSent = false;
     if (this.connectTimer !== null) clearTimeout(this.connectTimer);
-    this.connectTimer = setTimeout(() => this.sendConnect(), 750);
+    this.connectTimer = setTimeout(() => void this.sendConnect(), 750);
   }
 
   private async sendConnect(): Promise<void> {
@@ -327,7 +381,7 @@ class GatewayClient {
     const auth = this.opts.token ? { token: this.opts.token } : undefined;
 
     // Build device fingerprint if identity is available
-    let device: any = undefined;
+    let device: { id: string; publicKey: string; signature: string; signedAt: number; nonce?: string } | undefined = undefined;
     const identity = this.opts.deviceIdentity;
     if (identity) {
       try {
@@ -372,10 +426,10 @@ class GatewayClient {
       caps: ["tool-events"],
     };
 
-    this.request("connect", params)
+    void this.request("connect", params)
       .then((payload) => {
         this.backoffMs = 800;
-        this.opts.onHello?.(payload);
+        this.opts.onHello?.(payload as GatewayPayload);
       })
       .catch(() => {
         this.ws?.close(4008, "connect failed");
@@ -383,9 +437,9 @@ class GatewayClient {
   }
 
   private handleMessage(raw: string): void {
-    let msg: any;
+    let msg: GatewayMessage;
     try {
-      msg = JSON.parse(raw);
+      msg = JSON.parse(raw) as GatewayMessage;
     } catch {
       return;
     }
@@ -395,7 +449,7 @@ class GatewayClient {
         const nonce = msg.payload?.nonce;
         if (typeof nonce === "string") {
           this.connectNonce = nonce;
-          this.sendConnect();
+          void this.sendConnect();
         }
         return;
       }
@@ -428,7 +482,7 @@ interface ChatMessage {
   text: string;
   images: string[]; // data URIs or URLs
   timestamp: number;
-  contentBlocks?: any[]; // raw content array from history (preserves tool_use interleaving)
+  contentBlocks?: ContentBlock[]; // raw content array from history (preserves tool_use interleaving)
   voiceRefs?: string[]; // VOICE:filename.b64 refs for audio playback via gateway
 }
 
@@ -513,16 +567,12 @@ class OnboardingModal extends Modal {
       cls: "openclaw-onboard-desc",
     });
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.style.flexDirection = "column";
-    btnRow.style.gap = "10px";
+    const btnRow = el.createDiv("openclaw-onboard-buttons openclaw-onboard-buttons-vertical");
 
-    const freshBtn = btnRow.createEl("button", { text: "I need to install OpenClaw", cls: "mod-cta" });
-    freshBtn.style.width = "100%";
+    const freshBtn = btnRow.createEl("button", { text: "I need to install OpenClaw", cls: "mod-cta openclaw-full-width" });
     freshBtn.addEventListener("click", () => { this.path = "fresh"; this.step = 1; this.renderStep(); });
 
-    const existBtn = btnRow.createEl("button", { text: "OpenClaw is already running" });
-    existBtn.style.width = "100%";
+    const existBtn = btnRow.createEl("button", { text: "OpenClaw is already running", cls: "openclaw-full-width" });
     existBtn.addEventListener("click", () => { this.path = "existing"; this.step = 1; this.renderStep(); });
   }
 
@@ -536,11 +586,11 @@ class OnboardingModal extends Modal {
     });
 
     const fields: { key: keyof typeof this.setupKeys; label: string; required?: boolean; placeholder: string; help: string }[] = [
-      { key: "claude1", label: "Claude Token", required: true, placeholder: "sk-ant-...", help: "From <a href='https://console.anthropic.com/settings/keys'>console.anthropic.com</a> or Claude Max OAuth" },
-      { key: "claude2", label: "Claude Token #2 (parallel requests)", placeholder: "sk-ant-...", help: "Optional — enables concurrent requests" },
-      { key: "googleai", label: "Google AI API Key", placeholder: "AIza...", help: "Free at <a href='https://aistudio.google.com/apikey'>aistudio.google.com</a> — enables Gemini models" },
-      { key: "brave", label: "Brave Search API Key", placeholder: "BSA...", help: "Free at <a href='https://brave.com/search/api/'>brave.com/search/api</a> — web search" },
-      { key: "elevenlabs", label: "ElevenLabs API Key", placeholder: "sk_...", help: "Free at <a href='https://elevenlabs.io'>elevenlabs.io</a> — voice/TTS" },
+      { key: "claude1", label: "Claude token", required: true, placeholder: "sk-ant-...", help: "From <a href='https://console.anthropic.com/settings/keys'>console.anthropic.com</a> or Claude Max OAuth" },
+      { key: "claude2", label: "Claude token #2 (parallel requests)", placeholder: "sk-ant-...", help: "Optional — enables concurrent requests" },
+      { key: "googleai", label: "Google AI API key", placeholder: "AIza...", help: "Free at <a href='https://aistudio.google.com/apikey'>aistudio.google.com</a> — enables Gemini models" },
+      { key: "brave", label: "Brave Search API key", placeholder: "BSA...", help: "Free at <a href='https://brave.com/search/api/'>brave.com/search/api</a> — web search" },
+      { key: "elevenlabs", label: "ElevenLabs API key", placeholder: "sk_...", help: "Free at <a href='https://elevenlabs.io'>elevenlabs.io</a> — voice/TTS" },
     ];
 
     for (const f of fields) {
@@ -564,7 +614,7 @@ class OnboardingModal extends Modal {
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
     const nextBtn = btnRow.createEl("button", { text: "Next →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => {
       if (!this.setupKeys.claude1) { this.showStatus("Claude token is required", "error"); return; }
@@ -604,7 +654,7 @@ class OnboardingModal extends Modal {
       }
     });
 
-    const addBtn = el.createEl("button", { text: "+ Add another bot" });
+    const addBtn = el.createEl("button", { text: "+ add another bot" });
     addBtn.style.cssText = "background:none;border:1.5px dashed var(--background-modifier-border);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text-muted);cursor:pointer;margin-top:8px";
     addBtn.addEventListener("click", () => { this.setupBots.push({ name: '', model: 'anthropic/claude-sonnet-4-6' }); this.renderStep(); });
 
@@ -615,7 +665,7 @@ class OnboardingModal extends Modal {
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
     const nextBtn = btnRow.createEl("button", { text: "Generate install command →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
   }
@@ -653,13 +703,13 @@ class OnboardingModal extends Modal {
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
     const nextBtn = btnRow.createEl("button", { text: "OpenClaw is running →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 4; this.renderStep(); });
   }
 
-  private generateConfig(): Record<string, any> {
-    const config: Record<string, any> = {
+  private generateConfig(): Record<string, unknown> {
+    const config: Record<string, unknown> = {
       auth: { profiles: {} },
       agents: { defaults: { model: { primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6' } } },
       gateway: { port: 18789, bind: 'loopback', tailscale: { mode: 'serve' }, auth: { mode: 'token', allowTailscale: true } },
@@ -706,7 +756,7 @@ class OnboardingModal extends Modal {
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 0; this.path = null; this.renderStep(); });
     const nextBtn = btnRow.createEl("button", { text: "Both on Tailscale →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 2; this.renderStep(); });
   }
@@ -723,7 +773,7 @@ class OnboardingModal extends Modal {
     el.createEl("strong", { text: "1. Configure OpenClaw" });
     this.makeCopyBox(el, "openclaw config set gateway.bind loopback\nopenclaw config set gateway.tailscale.mode serve\nopenclaw gateway restart");
 
-    el.createEl("strong", { text: "2. Start Tailscale Serve" });
+    el.createEl("strong", { text: "2. Start Tailscale serve" });
     this.makeCopyBox(el, "tailscale serve --bg http://127.0.0.1:18789");
 
     el.createEl("strong", { text: "3. Get your URL and token" });
@@ -740,7 +790,7 @@ class OnboardingModal extends Modal {
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 1; this.renderStep(); });
     const nextBtn = btnRow.createEl("button", { text: "I have the URL and token →", cls: "mod-cta" });
     nextBtn.addEventListener("click", () => { this.step = 3; this.renderStep(); });
   }
@@ -768,7 +818,7 @@ class OnboardingModal extends Modal {
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
-    tokenGroup.createEl("label", { text: "Auth Token" });
+    tokenGroup.createEl("label", { text: "Auth token" });
     const tokenInput = tokenGroup.createEl("input", {
       type: "password",
       value: this.plugin.settings.token || "",
@@ -821,10 +871,10 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     li6.innerHTML = "<strong>Still stuck?</strong> Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
 
     const testBtn = btnRow.createEl("button", { text: "Test connection", cls: "mod-cta" });
-    testBtn.addEventListener("click", async () => {
+    testBtn.addEventListener("click", () => void (async () => {
       const url = urlInput.value.trim();
       const token = tokenInput.value.trim();
 
@@ -867,18 +917,18 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
         this.showStatus("Could not connect. Check the troubleshooting steps below.", "error");
         troubleshoot.style.display = "";
       }
-    });
+    })());
   }
 
   private makeCopyBox(parent: HTMLElement, command: string): HTMLElement {
     const box = parent.createDiv("openclaw-copy-box");
     box.createEl("code", { text: command });
     const btn = box.createSpan("openclaw-copy-btn");
-    btn.textContent = "copy";
+    btn.textContent = "Copy";
     box.addEventListener("click", () => {
-      navigator.clipboard.writeText(command).then(() => {
+      void navigator.clipboard.writeText(command).then(() => {
         btn.textContent = "✓";
-        setTimeout(() => btn.textContent = "copy", 1500);
+        setTimeout(() => btn.textContent = "Copy", 1500);
       });
     });
     return box;
@@ -915,13 +965,13 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     a1hint.innerHTML = "Replace <code>&lt;requestId&gt;</code> with the ID shown in the pending list. You can also approve from the OpenClaw Control UI dashboard.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← Back" }).addEventListener("click", () => { this.step = 3; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 3; this.renderStep(); });
 
     const pairBtn = btnRow.createEl("button", {
       text: hasKeys ? "Check pairing status" : "Send pairing request",
       cls: "mod-cta",
     });
-    pairBtn.addEventListener("click", async () => {
+    pairBtn.addEventListener("click", () => void (async () => {
       pairBtn.disabled = true;
       this.showStatus("Connecting to gateway...", "info");
 
@@ -946,7 +996,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
             setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
             return;
           }
-        } catch (e: any) {
+        } catch (e: unknown) {
           // If we get an auth error, device needs approval
           const msg = String(e);
           if (msg.includes("scope") || msg.includes("auth") || msg.includes("pair")) {
@@ -963,7 +1013,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
         this.showStatus(`Error: ${e}`, "error");
         pairBtn.disabled = false;
       }
-    });
+    })());
 
     const skipBtn = btnRow.createEl("button", { text: "Skip for now" });
     skipBtn.addEventListener("click", () => { this.step = 5; this.renderStep(); });
@@ -971,7 +1021,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
   private startPairingPoll(btn: HTMLButtonElement): void {
     let attempts = 0;
-    this.pairingPollTimer = setInterval(async () => {
+    this.pairingPollTimer = setInterval(() => void (async () => {
       attempts++;
       if (attempts > 60) { // 2 minutes
         if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
@@ -987,7 +1037,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
           setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
         }
       } catch { /* still waiting */ }
-    }, 2000);
+    })(), 2000);
   }
 
   // ─── Step 5: Done ────────────────────────────────────────────────
@@ -1008,27 +1058,27 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     list.createEl("li", { text: "Tool calls appear inline — click file paths to open them" });
 
     const syncTip = el.createDiv("openclaw-onboard-info");
-    syncTip.createEl("strong", { text: "💡 Sync tip: " });
+    syncTip.createEl("strong", { text: "💡 sync tip: " });
     syncTip.createEl("span", {
       text: "Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically — set up once, works everywhere.",
     });
 
     const controlTip = el.createDiv("openclaw-onboard-info");
-    controlTip.createEl("strong", { text: "🖥️ Control UI: " });
+    controlTip.createEl("strong", { text: "🖥️ control UI: " });
     const ctrlSpan = controlTip.createEl("span");
     ctrlSpan.innerHTML = "You can also manage your gateway from any browser on your Tailscale network. Just open your gateway URL in a browser.";
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     const doneBtn = btnRow.createEl("button", { text: "Start chatting →", cls: "mod-cta" });
-    doneBtn.addEventListener("click", async () => {
+    doneBtn.addEventListener("click", () => void (async () => {
       this.plugin.settings.onboardingComplete = true;
       // Always reset to "main" session to ensure clean connection
       this.plugin.settings.sessionKey = "main";
       await this.plugin.saveSettings();
       this.close();
-      if (!this.plugin.gatewayConnected) this.plugin.connectGateway();
-      this.plugin.activateView();
-    });
+      if (!this.plugin.gatewayConnected) void this.plugin.connectGateway();
+      void this.plugin.activateView();
+    })());
   }
 
   private showStatus(text: string, type: "info" | "success" | "error"): void {
@@ -1158,7 +1208,7 @@ class OpenClawChatView extends ItemView {
     document.addEventListener("click", () => { if (this.profileDropdownEl) this.profileDropdownEl.style.display = "none"; });
 
     // We'll render tabs after loading sessions
-    this.renderTabs();
+    void this.renderTabs();
 
     // Hidden elements for compatibility
 
@@ -1199,7 +1249,7 @@ class OpenClawChatView extends ItemView {
       attr: { type: "file", accept: "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css", multiple: "true" },
     });
     this.fileInputEl.style.display = "none";
-    this.fileInputEl.addEventListener("change", () => this.handleFileSelect());
+    this.fileInputEl.addEventListener("change", () => void this.handleFileSelect());
     attachBtn.addEventListener("click", () => this.fileInputEl.click());
     this.inputEl = inputRow.createEl("textarea", {
       cls: "openclaw-input",
@@ -1219,7 +1269,7 @@ class OpenClawChatView extends ItemView {
     this.reconnectBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
     this.reconnectBtn.style.display = "none";
     this.reconnectBtn.addEventListener("click", () => {
-      this.plugin.connectGateway();
+      void this.plugin.connectGateway();
     });
     this.statusEl = sendWrapper.createSpan("openclaw-status-dot");
 
@@ -1236,7 +1286,7 @@ class OpenClawChatView extends ItemView {
         }
         if (!e.shiftKey) {
           e.preventDefault();
-          this.sendMessage();
+          void this.sendMessage();
         }
       }
     });
@@ -1257,25 +1307,25 @@ class OpenClawChatView extends ItemView {
         if (item.type.startsWith("image/")) {
           e.preventDefault();
           const file = item.getAsFile();
-          if (file) this.handlePastedFile(file);
+          if (file) void this.handlePastedFile(file);
           return;
         }
       }
     });
     this.sendBtn.addEventListener("click", () => {
       if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
-        this.sendMessage();
+        void this.sendMessage();
       }
       // Voice recording disabled — base64 in message text bloats context
     });
-    this.abortBtn.addEventListener("click", () => this.abortMessage());
+    this.abortBtn.addEventListener("click", () => void this.abortMessage());
 
     // Initial state
     this.updateStatus();
     this.plugin.chatView = this;
     if (this.plugin.gatewayConnected) {
       await this.loadHistory();
-      this.loadAgents();
+      void this.loadAgents();
     }
   }
 
@@ -1310,10 +1360,9 @@ class OpenClawChatView extends ItemView {
     if (!this.plugin.gateway?.connected) return;
     try {
       // Get agent list
-      const result = await this.plugin.gateway.request("agents.list", {});
-      const agentList: any[] = result?.agents || [];
+      const result = await this.plugin.gateway.request("agents.list", {}) as { agents?: AgentListItem[] } | null;
+      const agentList: AgentListItem[] = result?.agents || [];
       if (agentList.length === 0) {
-        // Single-agent mode — just load identity for "main"
         agentList.push({ id: "main" });
       }
 
@@ -1393,7 +1442,7 @@ class OpenClawChatView extends ItemView {
       if (!isActive) {
         item.addEventListener("click", () => {
           this.profileDropdownEl!.style.display = "none";
-          this.switchAgent(agent);
+          void this.switchAgent(agent);
         });
       }
     }
@@ -1407,11 +1456,11 @@ class OpenClawChatView extends ItemView {
       const result = await this.plugin.gateway.request("chat.history", {
         sessionKey: this.plugin.settings.sessionKey,
         limit: 200,
-      });
+      }) as { messages?: HistoryMessage[] } | null;
       if (result?.messages && Array.isArray(result.messages)) {
         this.messages = result.messages
-          .filter((m: any) => m.role === "user" || m.role === "assistant")
-          .map((m: any) => {
+          .filter((m: HistoryMessage) => m.role === "user" || m.role === "assistant")
+          .map((m: HistoryMessage) => {
             const { text, images } = this.extractContent(m.content);
             return {
               role: m.role as "user" | "assistant",
@@ -1431,14 +1480,14 @@ class OpenClawChatView extends ItemView {
         // No post-processing needed: VOICE: refs are in the assistant message text itself
 
         await this.renderMessages();
-        this.updateContextMeter();
+        void this.updateContextMeter();
       }
     } catch (e) {
       console.error("[ObsidianClaw] Failed to load history:", e);
     }
   }
 
-  private extractContent(content: any): { text: string; images: string[] } {
+  private extractContent(content: string | ContentBlock[] | undefined): { text: string; images: string[] } {
     let text = "";
     const images: string[] = [];
 
@@ -1537,7 +1586,7 @@ class OpenClawChatView extends ItemView {
       });
       this.mediaRecorder.addEventListener("stop", () => {
         stream.getTracks().forEach(t => t.stop());
-        this.finishRecording();
+        void this.finishRecording();
       });
 
       this.mediaRecorder.start();
@@ -1697,7 +1746,7 @@ class OpenClawChatView extends ItemView {
     }, 15000);
 
     try {
-      const sendParams: any = {
+      const sendParams: Record<string, unknown> = {
         sessionKey: sendSessionKey,
         message: fullMessage,
         deliver: false,
@@ -1736,13 +1785,13 @@ class OpenClawChatView extends ItemView {
   async updateContextMeter(): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
-      const result = await this.plugin.gateway.request("sessions.list", {});
-      const sessions = result?.sessions || [];
+      const result = await this.plugin.gateway.request("sessions.list", {}) as { sessions?: SessionInfo[] } | null;
+      const sessions: SessionInfo[] = result?.sessions || [];
       // Find session matching current sessionKey (try exact match, then with agent prefix)
       const sk = this.plugin.settings.sessionKey || "main";
-      const session = sessions.find((s: any) => s.key === sk) ||
-        sessions.find((s: any) => s.key === `${this.agentPrefix}${sk}`) ||
-        sessions.find((s: any) => s.key.endsWith(`:${sk}`));
+      const session = sessions.find((s: SessionInfo) => s.key === sk) ||
+        sessions.find((s: SessionInfo) => s.key === `${this.agentPrefix}${sk}`) ||
+        sessions.find((s: SessionInfo) => s.key.endsWith(`:${sk}`));
       if (!session) return;
       const used = session.totalTokens || 0;
       const max = session.contextTokens || 200000;
@@ -1767,7 +1816,7 @@ class OpenClawChatView extends ItemView {
       // Detect session list changes and re-render tabs when needed
       const agentPrefix = this.agentPrefix;
       const currentSessionKeys = new Set(
-        sessions.filter((s: any) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:") && !s.key.includes(":subagent:")).map((s: any) => s.key)
+        sessions.filter((s: SessionInfo) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:") && !s.key.includes(":subagent:")).map((s: SessionInfo) => s.key)
       );
       const trackedKeys = new Set(this.tabSessions.map(t => `${agentPrefix}${t.key}`));
       const added = [...currentSessionKeys].some(k => !trackedKeys.has(k));
@@ -1806,10 +1855,10 @@ class OpenClawChatView extends ItemView {
     const currentKey = this.plugin.settings.sessionKey || "main";
 
     // Fetch sessions from gateway
-    let sessions: any[] = [];
+    let sessions: SessionInfo[] = [];
     if (this.plugin.gateway?.connected) {
       try {
-        const result = await this.plugin.gateway.request("sessions.list", {});
+        const result = await this.plugin.gateway.request("sessions.list", {}) as { sessions?: SessionInfo[] } | null;
         sessions = result?.sessions || [];
       } catch { /* use empty */ }
     }
@@ -1865,8 +1914,7 @@ class OpenClawChatView extends ItemView {
       const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
       if (isResetOnly) {
         closeBtn.title = "Reset conversation";
-        closeBtn.addEventListener("click", async (e) => {
-          e.stopPropagation();
+        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected) return;
           try {
             await this.plugin.gateway.request("chat.send", {
@@ -1882,21 +1930,20 @@ class OpenClawChatView extends ItemView {
             }
             await this.updateContextMeter();
             await this.renderTabs();
-          } catch (err: any) {
-            new Notice(`Reset failed: ${err?.message || err}`);
+          } catch (err: unknown) {
+            new Notice(`Reset failed: ${err instanceof Error ? err.message : String(err)}`);
           }
-        });
+        })(); });
       } else {
         closeBtn.title = "Close tab";
-        closeBtn.addEventListener("click", async (e) => {
-          e.stopPropagation();
+        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
           this.tabDeleteInProgress = true;
           try {
             const deleted = await deleteSessionWithFallback(this.plugin.gateway, `${this.agentPrefix}${tab.key}`);
             new Notice(deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`);
-          } catch (err: any) {
-            new Notice(`Close failed: ${err?.message || err}`);
+          } catch (err: unknown) {
+            new Notice(`Close failed: ${err instanceof Error ? err.message : String(err)}`);
           }
           // Clean up any stream state for the deleted tab
           this.finishStream(tab.key);
@@ -1912,7 +1959,7 @@ class OpenClawChatView extends ItemView {
           this.tabDeleteInProgress = false;
           await this.renderTabs();
           await this.updateContextMeter();
-        });
+        })(); });
       }
 
       // Progress bar (gray container, black fill)
@@ -1922,7 +1969,7 @@ class OpenClawChatView extends ItemView {
 
       // Click to switch
       if (!isCurrent) {
-        tabEl.addEventListener("click", async () => {
+        tabEl.addEventListener("click", () => void (async () => {
           // Clear DOM from old tab
           this.streamEl = null;
           this.typingEl.style.display = "none";
@@ -1940,16 +1987,16 @@ class OpenClawChatView extends ItemView {
           this.restoreStreamUI();
 
           await this.updateContextMeter();
-          this.renderTabs();
+          void this.renderTabs();
           this.updateStatus();
-        });
+        })());
       }
     }
 
     // + button to add new tab
     const addBtn = this.tabBarEl.createDiv({ cls: "openclaw-tab openclaw-tab-add" });
     addBtn.createSpan({ text: "+", cls: "openclaw-tab-label" });
-    addBtn.addEventListener("click", async () => {
+    addBtn.addEventListener("click", () => void (async () => {
       // Auto-name: find next number
       const nums = this.tabSessions.map(t => parseInt(t.label)).filter(n => !isNaN(n));
       const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
@@ -1982,10 +2029,10 @@ class OpenClawChatView extends ItemView {
         await this.renderTabs();
         await this.updateContextMeter();
         new Notice(`New tab: ${nextNum}`);
-      } catch (err: any) {
-        new Notice(`Failed to create tab: ${err?.message || err}`);
+      } catch (err: unknown) {
+        new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`);
       }
-    });
+    })());
   }
 
   private contextColor(pct: number): string {
@@ -2031,15 +2078,15 @@ class OpenClawChatView extends ItemView {
         idempotencyKey: "compact-" + Date.now(),
       });
       // Poll context meter to animate the decrease
-      const pollInterval = setInterval(async () => {
+      const pollInterval = setInterval(() => void (async () => {
         await this.updateContextMeter();
-      }, 2000);
-      setTimeout(async () => {
+      })(), 2000);
+      setTimeout(() => void (async () => {
         clearInterval(pollInterval);
         this.hideBanner();
         await this.loadHistory();
         await this.updateContextMeter();
-      }, 12000);
+      })(), 12000);
     } catch (e) {
       this.hideBanner();
       new Notice(`Compact failed: ${e}`);
@@ -2195,35 +2242,35 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  private buildToolLabel(toolName: string, args: any): { label: string; url?: string } {
-    const a = args || {};
+  private buildToolLabel(toolName: string, args: Record<string, unknown> | undefined): { label: string; url?: string } {
+    const a = args || {} as Record<string, unknown>;
     switch (toolName) {
       case "exec": {
-        const cmd = a.command || "";
+        const cmd = String(a.command || "");
         const short = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
         return { label: `🔧 ${short || "Running command"}` };
       }
       case "read": case "Read": {
-        const p = a.path || a.file_path || "";
+        const p = String(a.path || a.file_path || "");
         const name = p.split("/").pop() || "file";
         return { label: `📄 Reading ${name}` };
       }
       case "write": case "Write": {
-        const p = a.path || a.file_path || "";
+        const p = String(a.path || a.file_path || "");
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Writing ${name}` };
       }
       case "edit": case "Edit": {
-        const p = a.path || a.file_path || "";
+        const p = String(a.path || a.file_path || "");
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Editing ${name}` };
       }
       case "web_search": {
-        const q = a.query || "";
+        const q = String(a.query || "");
         return { label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "web_fetch": {
-        const rawUrl = a.url || "";
+        const rawUrl = String(a.url || "");
         try {
           const domain = new URL(rawUrl).hostname;
           return { label: `🌐 Fetching ${domain}`, url: rawUrl };
@@ -2236,11 +2283,11 @@ class OpenClawChatView extends ItemView {
       case "image":
         return { label: "👁️ Viewing image" };
       case "memory_search": {
-        const q = a.query || "";
+        const q = String(a.query || "");
         return { label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "memory_get": {
-        const p = a.path || "";
+        const p = String(a.path || "");
         const name = p.split("/").pop() || "memory";
         return { label: `🧠 Reading ${name}` };
       }
@@ -2330,9 +2377,9 @@ class OpenClawChatView extends ItemView {
   }
 
   /** Resolve which session a stream/agent event belongs to */
-  private resolveStreamSession(payload: any): string | null {
+  private resolveStreamSession(payload: GatewayPayload): string | null {
     // Try sessionKey on payload first
-    const sk = payload.sessionKey ?? "";
+    const sk = String(payload.sessionKey ?? "");
     if (sk) {
       // Normalize: strip agent:main: prefix
       const prefix = this.agentPrefix;
@@ -2340,16 +2387,18 @@ class OpenClawChatView extends ItemView {
       if (this.streams.has(normalized)) return normalized;
     }
     // Fall back to runId mapping
-    const runId = payload.runId || payload.data?.runId || "";
+    const data = payload.data as GatewayPayload | undefined;
+    const runId = String(payload.runId || data?.runId || "");
     if (runId && this.runToSession.has(runId)) return this.runToSession.get(runId)!;
     // Last resort: if only one stream is active, use that
     if (this.streams.size === 1) return this.streams.keys().next().value!;
     return null;
   }
 
-  handleStreamEvent(payload: any): void {
-    const stream = payload.stream || "";
-    const state = payload.state || "";
+  handleStreamEvent(payload: GatewayPayload): void {
+    const stream = String(payload.stream || "");
+    const state = String(payload.state || "");
+    const payloadData = payload.data as GatewayPayload | undefined;
 
     const sessionKey = this.resolveStreamSession(payload);
     const isActiveTab = sessionKey === this.activeSessionKey;
@@ -2357,7 +2406,7 @@ class OpenClawChatView extends ItemView {
     // Compaction can arrive without an active stream
     if (!sessionKey || !this.streams.has(sessionKey)) {
       if (stream === "compaction" || state === "compacting") {
-        const cPhase = payload.data?.phase || "";
+        const cPhase = String(payloadData?.phase || "");
         if (isActiveTab || !sessionKey) {
           if (cPhase === "end") {
             setTimeout(() => this.hideBanner(), 2000);
@@ -2398,8 +2447,8 @@ class OpenClawChatView extends ItemView {
     }
 
     // Handle explicit tool events
-    const toolName = payload.data?.name || payload.data?.toolName || payload.toolName || payload.name || "";
-    const phase = payload.data?.phase || payload.phase || "";
+    const toolName = String(payloadData?.name || payloadData?.toolName || payload.toolName || payload.name || "");
+    const phase = String(payloadData?.phase || payload.phase || "");
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
@@ -2407,7 +2456,7 @@ class OpenClawChatView extends ItemView {
       if (ss.text) {
         ss.splitPoints.push(ss.text.length);
       }
-      const { label, url } = this.buildToolLabel(toolName, payload.data?.args || payload.args);
+      const { label, url } = this.buildToolLabel(toolName, (payloadData?.args || payload.args) as Record<string, unknown> | undefined);
       ss.toolCalls.push(label);
       ss.items.push({ type: "tool", label, url } as StreamItem);
       if (isActiveTab) {
@@ -2437,9 +2486,9 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  handleChatEvent(payload: any): void {
+  handleChatEvent(payload: GatewayPayload): void {
     // Resolve which session this event belongs to
-    const payloadSk = payload.sessionKey ?? "";
+    const payloadSk = String(payload.sessionKey ?? "");
     const prefix = this.agentPrefix;
     let eventSessionKey: string | null = null;
     // Try to match against known sessions
@@ -2461,21 +2510,22 @@ class OpenClawChatView extends ItemView {
 
     const ss = this.streams.get(eventSessionKey);
     const isActiveTab = eventSessionKey === this.activeSessionKey;
+    const chatState = String(payload.state || "");
 
     // No active stream for this session (passive device): still refresh history
-    if (!ss && (payload.state === "final" || payload.state === "aborted" || payload.state === "error")) {
+    if (!ss && (chatState === "final" || chatState === "aborted" || chatState === "error")) {
       if (isActiveTab) {
         this.hideBanner();
-        this.loadHistory().then(() => {});
+        void this.loadHistory();
       }
       return;
     }
 
-    if (payload.state === "delta" && ss) {
+    if (chatState === "delta" && ss) {
       if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
       if (ss.workingTimer) { clearTimeout(ss.workingTimer); ss.workingTimer = null; }
       ss.lastDeltaTime = Date.now();
-      const text = this.extractDeltaText(payload.message);
+      const text = this.extractDeltaText(payload.message as Record<string, unknown> | string | undefined);
       if (text) {
         ss.text = text;
         if (isActiveTab) {
@@ -2484,44 +2534,44 @@ class OpenClawChatView extends ItemView {
           this.updateStreamBubble();
         }
       }
-    } else if (payload.state === "final") {
+    } else if (chatState === "final") {
       const items = ss ? [...ss.items] : [];
       this.finishStream(eventSessionKey);
 
       if (isActiveTab) {
-        this.loadHistory().then(async () => {
+        void this.loadHistory().then(async () => {
           await this.renderMessages();
-          this.updateContextMeter();
+          void this.updateContextMeter();
           if (items.length > 0) {
             const lastAssistant = [...this.messages].reverse().find(m => m.role === "assistant");
             if (lastAssistant) {
               const key = String(lastAssistant.timestamp);
               if (!this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
               this.plugin.settings.streamItemsMap[key] = items;
-              this.plugin.saveSettings();
+              void this.plugin.saveSettings();
             }
           }
         });
       } else {
         // Not active tab: just clean up, history will load when user switches to it
       }
-    } else if (payload.state === "aborted") {
+    } else if (chatState === "aborted") {
       if (isActiveTab && ss?.text) {
         this.messages.push({ role: "assistant", text: ss.text, images: [], timestamp: Date.now() });
       }
       this.finishStream(eventSessionKey);
-      if (isActiveTab) this.renderMessages();
-    } else if (payload.state === "error") {
+      if (isActiveTab) void this.renderMessages();
+    } else if (chatState === "error") {
       if (isActiveTab) {
         this.messages.push({
           role: "assistant",
-          text: `Error: ${payload.errorMessage ?? "unknown error"}`,
+          text: `Error: ${String(payload.errorMessage ?? "unknown error")}`,
           images: [],
           timestamp: Date.now(),
         });
       }
       this.finishStream(eventSessionKey);
-      if (isActiveTab) this.renderMessages();
+      if (isActiveTab) void this.renderMessages();
     }
   }
 
@@ -2660,21 +2710,21 @@ class OpenClawChatView extends ItemView {
   /** Render an inline audio player that fetches audio via gateway HTTP */
   private renderAudioPlayer(container: HTMLElement, voiceRef: string): void {
     const playerEl = container.createDiv("openclaw-audio-player");
-    const playBtn = playerEl.createEl("button", { cls: "openclaw-audio-play-btn", text: "▶ Voice message" });
+    const playBtn = playerEl.createEl("button", { cls: "openclaw-audio-play-btn", text: "▶ voice message" });
     const progressEl = playerEl.createDiv("openclaw-audio-progress");
     const barEl = progressEl.createDiv("openclaw-audio-bar");
 
     let audio: HTMLAudioElement | null = null;
 
-    playBtn.addEventListener("click", async () => {
+    playBtn.addEventListener("click", () => void (async () => {
       if (audio && !audio.paused) {
         audio.pause();
-        playBtn.textContent = "▶ Voice message";
+        playBtn.textContent = "▶ voice message";
         return;
       }
 
       if (!audio) {
-        playBtn.textContent = "⏳ Loading...";
+        playBtn.textContent = "⏳ loading...";
         try {
           const url = this.buildVoiceUrl(voiceRef);
           console.log("[ObsidianClaw] Loading audio from:", url);
@@ -2691,36 +2741,37 @@ class OpenClawChatView extends ItemView {
             if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
           });
           audio.addEventListener("ended", () => {
-            playBtn.textContent = "▶ Voice message";
+            playBtn.textContent = "▶ voice message";
             barEl.style.width = "0%";
           });
         } catch (e) {
           console.error("[ObsidianClaw] Audio load failed:", e);
-          playBtn.textContent = "⚠ Audio unavailable";
+          playBtn.textContent = "⚠ audio unavailable";
           playBtn.disabled = true;
           return;
         }
       }
 
-      playBtn.textContent = "⏸ Playing...";
-      audio.play().catch(() => { playBtn.textContent = "⚠ Audio unavailable"; playBtn.disabled = true; });
-    });
+      playBtn.textContent = "⏸ playing...";
+      audio.play().catch(() => { playBtn.textContent = "⚠ audio unavailable"; playBtn.disabled = true; });
+    })());
   }
 
-  private extractDeltaText(msg: any): string {
+  private extractDeltaText(msg: Record<string, unknown> | string | undefined): string {
     if (typeof msg === "string") return msg;
+    if (!msg) return "";
     // Gateway sends {role, content, timestamp} where content is [{type:"text", text:"..."}]
-    const content = msg?.content ?? msg;
+    const content = msg.content ?? msg;
     if (Array.isArray(content)) {
       let text = "";
       for (const block of content) {
         if (typeof block === "string") { text += block; }
-        else if (block?.text) { text += (text ? "\n" : "") + block.text; }
+        else if (block && typeof block === "object" && "text" in block) { text += (text ? "\n" : "") + String((block as { text: string }).text); }
       }
       return text;
     }
     if (typeof content === "string") return content;
-    return msg?.text ?? "";
+    return String((msg as Record<string, unknown>).text ?? "");
   }
 
   private updateStreamBubble(): void {
@@ -2740,7 +2791,7 @@ class OpenClawChatView extends ItemView {
     this.messagesEl.empty();
     for (const msg of this.messages) {
       if (msg.role === "assistant") {
-        const hasContentTools = msg.contentBlocks?.some((b: any) => b.type === "tool_use" || b.type === "toolCall") || false;
+        const hasContentTools = msg.contentBlocks?.some((b: ContentBlock) => b.type === "tool_use" || b.type === "toolCall") || false;
 
         if (hasContentTools && msg.contentBlocks) {
           // Render interleaved text + tool blocks directly
@@ -2851,27 +2902,27 @@ export default class OpenClawPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this));
 
     // Ribbon icon
-    this.addRibbonIcon("message-square", "OpenClaw Chat", () => {
-      this.activateView();
+    this.addRibbonIcon("message-square", "OpenClaw chat", () => {
+      void this.activateView();
     });
 
     // Commands
     this.addCommand({
       id: "toggle-chat",
       name: "Toggle chat sidebar",
-      callback: () => this.activateView(),
+      callback: () => void this.activateView(),
     });
 
     this.addCommand({
       id: "ask-about-note",
       name: "Ask about current note",
-      callback: () => this.askAboutNote(),
+      callback: () => void this.askAboutNote(),
     });
 
     this.addCommand({
       id: "reconnect",
       name: "Reconnect to gateway",
-      callback: () => this.connectGateway(),
+      callback: () => void this.connectGateway(),
     });
 
     this.addCommand({
@@ -2887,10 +2938,10 @@ export default class OpenClawPlugin extends Plugin {
       // Small delay so Obsidian finishes loading
       setTimeout(() => new OnboardingModal(this.app, this).open(), 500);
     } else {
-      this.connectGateway();
+      void this.connectGateway();
       // Auto-open chat sidebar after workspace is ready
       this.app.workspace.onLayoutReady(() => {
-        this.activateView();
+        void this.activateView();
       });
     }
   }
@@ -2948,9 +2999,9 @@ export default class OpenClawPlugin extends Plugin {
       onHello: () => {
         this.gatewayConnected = true;
         this.chatView?.updateStatus();
-        this.chatView?.loadHistory();
-        this.chatView?.renderTabs();
-        this.chatView?.loadAgents();
+        void this.chatView?.loadHistory();
+        void this.chatView?.renderTabs();
+        void this.chatView?.loadAgents();
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
           this.chatView.currentModel = this.settings.currentModel;
@@ -2980,13 +3031,13 @@ export default class OpenClawPlugin extends Plugin {
   async activateView(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
     if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+      void this.app.workspace.revealLeaf(existing[0]);
       return;
     }
     const leaf = this.app.workspace.getRightLeaf(false);
     if (leaf) {
       await leaf.setViewState({ type: VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
+      void this.app.workspace.revealLeaf(leaf);
     }
   }
 
@@ -3028,7 +3079,7 @@ export default class OpenClawPlugin extends Plugin {
 class ModelPickerModal extends Modal {
   plugin: OpenClawPlugin;
   chatView: OpenClawChatView;
-  private models: any[] = [];
+  private models: ModelInfo[] = [];
   private currentModel: string = "";
   private selectedProvider: string | null = null;
 
@@ -3043,14 +3094,14 @@ class ModelPickerModal extends Modal {
     this.contentEl.createDiv("openclaw-picker-loading").textContent = "Loading models...";
 
     try {
-      const result = await this.plugin.gateway?.request("models.list", {});
+      const result = await this.plugin.gateway?.request("models.list", {}) as { models?: ModelInfo[] } | undefined;
       this.models = result?.models || [];
     } catch { this.models = []; }
 
     // Normalize currentModel to always be provider/id format
     this.currentModel = this.chatView.currentModel || "";
     if (this.currentModel && !this.currentModel.includes("/")) {
-      const match = this.models.find((m: any) => m.id === this.currentModel);
+      const match = this.models.find((m: ModelInfo) => m.id === this.currentModel);
       if (match) this.currentModel = `${match.provider}/${match.id}`;
     }
 
@@ -3060,7 +3111,7 @@ class ModelPickerModal extends Modal {
     }
 
     // If only one provider, skip straight to models
-    const providers = new Set(this.models.map((m: any) => m.provider));
+    const providers = new Set(this.models.map((m: ModelInfo) => m.provider));
     if (providers.size === 1) {
       this.renderModels([...providers][0]);
     } else {
@@ -3075,7 +3126,7 @@ class ModelPickerModal extends Modal {
     contentEl.empty();
 
     // Group models by provider
-    const providerMap = new Map<string, any[]>();
+    const providerMap = new Map<string, ModelInfo[]>();
     for (const m of this.models) {
       const p = m.provider || "unknown";
       if (!providerMap.has(p)) providerMap.set(p, []);
@@ -3115,14 +3166,14 @@ class ModelPickerModal extends Modal {
     contentEl.empty();
 
     // Back button
-    const providers = new Set(this.models.map((m: any) => m.provider));
+    const providers = new Set(this.models.map((m: ModelInfo) => m.provider));
     if (providers.size > 1) {
       const header = contentEl.createDiv("openclaw-picker-header");
       const backBtn = header.createEl("button", { cls: "openclaw-picker-back", text: "← " + provider });
       backBtn.addEventListener("click", () => this.renderProviders());
     }
 
-    const models = this.models.filter((m: any) => m.provider === provider);
+    const models = this.models.filter((m: ModelInfo) => m.provider === provider);
     const list = contentEl.createDiv("openclaw-picker-list openclaw-picker-model-list");
 
     for (const m of models) {
@@ -3135,7 +3186,7 @@ class ModelPickerModal extends Modal {
       left.createSpan({ text: m.name || m.id });
 
       // Always clickable - even the current model (user might want to re-select it)
-      row.addEventListener("click", async () => {
+      row.addEventListener("click", () => void (async () => {
         if (!this.plugin.gateway?.connected) return;
         row.addClass("openclaw-picker-selecting");
         row.textContent = "Switching...";
@@ -3157,7 +3208,7 @@ class ModelPickerModal extends Modal {
           new Notice(`Failed: ${e}`);
           this.renderModels(provider);
         }
-      });
+      })());
     }
   }
 }
@@ -3314,7 +3365,7 @@ class OpenClawSettingTab extends PluginSettingTab {
       .setDesc("Current conversation key. Use \"main\" for the default session.")
       .addText((text) =>
         text
-          .setPlaceholder("main")
+          .setPlaceholder("Main")
           .setValue(this.plugin.settings.sessionKey)
           .onChange(async (value) => {
             this.plugin.settings.sessionKey = value || "main";
@@ -3323,13 +3374,13 @@ class OpenClawSettingTab extends PluginSettingTab {
       )
       .addButton((btn) =>
         btn
-          .setButtonText("Reset to Main")
+          .setButtonText("Reset to main")
           .onClick(async () => {
             this.plugin.settings.sessionKey = "main";
             await this.plugin.saveSettings();
             this.display(); // refresh the settings UI
             await this.plugin.connectGateway();
-            new Notice("Reset to Main conversation");
+            new Notice("Reset to main conversation");
           })
       );
 
@@ -3373,7 +3424,7 @@ class OpenClawSettingTab extends PluginSettingTab {
       .setDesc("Re-establish the gateway connection")
       .addButton((btn) =>
         btn.setButtonText("Reconnect").onClick(() => {
-          this.plugin.connectGateway();
+          void this.plugin.connectGateway();
           new Notice("OpenClaw: Reconnecting...");
         })
       );
