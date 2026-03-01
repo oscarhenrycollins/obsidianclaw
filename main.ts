@@ -2883,7 +2883,7 @@ class OpenClawChatView extends ItemView {
           img.addEventListener("click", () => {
             // Open full-size in a modal-like overlay
             const overlay = document.body.createDiv("openclaw-img-overlay");
-            const fullImg = overlay.createEl("img", { attr: { src } });
+            overlay.createEl("img", { attr: { src } });
             overlay.addEventListener("click", () => overlay.remove());
           });
         }
@@ -3391,7 +3391,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     // ─── Status ──────────────────────────────────────────────────
     const statusSection = containerEl.createDiv("openclaw-settings-status");
     const connected = this.plugin.gatewayConnected;
-    const statusDot = statusSection.createSpan({ cls: `openclaw-settings-dot ${connected ? "connected" : "disconnected"}` });
+    statusSection.createSpan({ cls: `openclaw-settings-dot ${connected ? "connected" : "disconnected"}` });
     statusSection.createSpan({ text: connected ? "Connected" : "Disconnected", cls: "openclaw-settings-status-text" });
     if (this.plugin.settings.gatewayUrl) {
       statusSection.createSpan({
