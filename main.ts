@@ -18,6 +18,11 @@ import {
 
 type StreamItem = { type: "tool"; label: string; url?: string; textPos?: number } | { type: "text"; text: string };
 
+/** Safely extract a string from an unknown value (avoids [object Object] coercion). */
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
 interface AgentInfo {
   id: string;
   name: string;
@@ -336,7 +341,7 @@ class GatewayClient {
 
     this.ws = new WebSocket(url);
     this.ws.addEventListener("open", () => this.queueConnect());
-    this.ws.addEventListener("message", (e) => this.handleMessage(String(e.data ?? "")));
+    this.ws.addEventListener("message", (e) => this.handleMessage(str(e.data)));
     this.ws.addEventListener("close", (e) => {
       this.ws = null;
       this.flushPending(new Error(`closed (${e.code})`));
@@ -1856,7 +1861,7 @@ class OpenClawChatView extends ItemView {
       this.contextLabelEl.textContent = `${pct}%`;
       // Update active tab meter bar
       const activeFill = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-meter-fill") as HTMLElement;
-      if (activeFill) (activeFill as HTMLElement).setCssStyles({ width: pct + "%" });
+      if (activeFill) activeFill.setCssStyles({ width: pct + "%" });
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -2301,31 +2306,31 @@ class OpenClawChatView extends ItemView {
     const a = args ?? {};
     switch (toolName) {
       case "exec": {
-        const cmd = String(a?.command ?? "");
+        const cmd = str(a?.command);
         const short = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
         return { label: `🔧 ${short || "Running command"}` };
       }
       case "read": case "Read": {
-        const p = String(a?.path ?? a?.file_path ?? "");
+        const p = str(a?.path, str(a?.file_path));
         const name = p.split("/").pop() || "file";
         return { label: `📄 Reading ${name}` };
       }
       case "write": case "Write": {
-        const p = String(a?.path ?? a?.file_path ?? "");
+        const p = str(a?.path, str(a?.file_path));
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Writing ${name}` };
       }
       case "edit": case "Edit": {
-        const p = String(a?.path ?? a?.file_path ?? "");
+        const p = str(a?.path, str(a?.file_path));
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Editing ${name}` };
       }
       case "web_search": {
-        const q = String(a?.query ?? "");
+        const q = str(a?.query);
         return { label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "web_fetch": {
-        const rawUrl = String(a?.url ?? "");
+        const rawUrl = str(a?.url);
         try {
           const domain = new URL(rawUrl).hostname;
           return { label: `🌐 Fetching ${domain}`, url: rawUrl };
@@ -2338,11 +2343,11 @@ class OpenClawChatView extends ItemView {
       case "image":
         return { label: "👁️ Viewing image" };
       case "memory_search": {
-        const q = String(a?.query ?? "");
+        const q = str(a?.query);
         return { label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "memory_get": {
-        const p = String(a?.path ?? "");
+        const p = str(a?.path);
         const name = p.split("/").pop() || "memory";
         return { label: `🧠 Reading ${name}` };
       }
@@ -2416,7 +2421,7 @@ class OpenClawChatView extends ItemView {
   /** Resolve which session a stream/agent event belongs to */
   private resolveStreamSession(payload: GatewayPayload): string | null {
     // Try sessionKey on payload first
-    const sk = String(payload.sessionKey ?? "");
+    const sk = str(payload.sessionKey);
     if (sk) {
       // Normalize: strip agent:main: prefix
       const prefix = this.agentPrefix;
@@ -2425,7 +2430,7 @@ class OpenClawChatView extends ItemView {
     }
     // Fall back to runId mapping
     const data = payload.data as GatewayPayload | undefined;
-    const runId = String(payload.runId ?? data?.runId ?? "");
+    const runId = str(payload.runId, str(data?.runId));
     if (runId && this.runToSession.has(runId)) return this.runToSession.get(runId)!;
     // Last resort: if only one stream is active, use that
     if (this.streams.size === 1) return this.streams.keys().next().value!;
@@ -2433,8 +2438,8 @@ class OpenClawChatView extends ItemView {
   }
 
   handleStreamEvent(payload: GatewayPayload): void {
-    const stream = String(payload.stream ?? "");
-    const state = String(payload.state ?? "");
+    const stream = str(payload.stream);
+    const state = str(payload.state);
     const payloadData = payload.data as GatewayPayload | undefined;
 
     const sessionKey = this.resolveStreamSession(payload);
@@ -2443,7 +2448,7 @@ class OpenClawChatView extends ItemView {
     // Compaction can arrive without an active stream
     if (!sessionKey || !this.streams.has(sessionKey)) {
       if (stream === "compaction" || state === "compacting") {
-        const cPhase = String(payloadData?.phase ?? "");
+        const cPhase = str(payloadData?.phase);
         if (isActiveTab || !sessionKey) {
           if (cPhase === "end") {
             setTimeout(() => this.hideBanner(), 2000);
@@ -2484,8 +2489,8 @@ class OpenClawChatView extends ItemView {
     }
 
     // Handle explicit tool events
-    const toolName = String(payloadData?.name ?? payloadData?.toolName ?? payload.toolName ?? payload.name ?? "");
-    const phase = String(payloadData?.phase ?? payload.phase ?? "");
+    const toolName = str(payloadData?.name, str(payloadData?.toolName, str(payload.toolName, str(payload.name))));
+    const phase = str(payloadData?.phase, str(payload.phase));
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
@@ -2525,7 +2530,7 @@ class OpenClawChatView extends ItemView {
 
   handleChatEvent(payload: GatewayPayload): void {
     // Resolve which session this event belongs to
-    const payloadSk = String(payload.sessionKey ?? "");
+    const payloadSk = str(payload.sessionKey);
     const prefix = this.agentPrefix;
     let eventSessionKey: string | null = null;
     // Try to match against known sessions
@@ -2547,7 +2552,7 @@ class OpenClawChatView extends ItemView {
 
     const ss = this.streams.get(eventSessionKey);
     const isActiveTab = eventSessionKey === this.activeSessionKey;
-    const chatState = String(payload.state ?? "");
+    const chatState = str(payload.state);
 
     // No active stream for this session (passive device): still refresh history
     if (!ss && (chatState === "final" || chatState === "aborted" || chatState === "error")) {
@@ -2602,7 +2607,7 @@ class OpenClawChatView extends ItemView {
       if (isActiveTab) {
         this.messages.push({
           role: "assistant",
-          text: `Error: ${String(payload.errorMessage ?? "unknown error")}`,
+          text: `Error: ${str(payload.errorMessage, "unknown error")}`,
           images: [],
           timestamp: Date.now(),
         });
@@ -2686,7 +2691,7 @@ class OpenClawChatView extends ItemView {
         link.href = item.url;
         link.textContent = item.label;
         link.className = "openclaw-tool-link";
-        link.addEventListener("click", (e) => { e.preventDefault(); window.open(item.url!, "_blank"); });
+        link.addEventListener("click", (e) => { e.preventDefault(); window.open(item.url, "_blank"); });
         el.appendChild(link);
       } else {
         el.textContent = item.label;
@@ -2808,7 +2813,7 @@ class OpenClawChatView extends ItemView {
       return text;
     }
     if (typeof content === "string") return content;
-    return String(msg.text ?? "");
+    return str(msg.text);
   }
 
   private updateStreamBubble(): void {
@@ -2840,7 +2845,7 @@ class OpenClawChatView extends ItemView {
               if (cleaned) {
                 const bubble = this.messagesEl.createDiv("openclaw-msg openclaw-msg-assistant");
                 try {
-                  await MarkdownRenderer.render(this.app, cleaned, bubble, "", this.plugin);
+                  await MarkdownRenderer.render(this.app, cleaned, bubble, "", this);
                 } catch {
                   bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
                 }
@@ -2892,7 +2897,7 @@ class OpenClawChatView extends ItemView {
         if (displayText) {
           if (msg.role === "assistant") {
             try {
-              await MarkdownRenderer.render(this.app, displayText, bubble, "", this.plugin);
+              await MarkdownRenderer.render(this.app, displayText, bubble, "", this);
             } catch {
               bubble.createDiv({ text: displayText, cls: "openclaw-msg-text" });
             }
@@ -3368,7 +3373,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "OpenClaw" });
+    new Setting(containerEl).setName("OpenClaw").setHeading();
 
     // ─── Setup Wizard (top, most prominent) ───────────────────────
     const wizardSection = containerEl.createDiv("openclaw-settings-wizard");
@@ -3396,7 +3401,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     }
 
     // ─── Session ──────────────────────────────────────────────────
-    containerEl.createEl("h3", { text: "Session" });
+    new Setting(containerEl).setName("Session").setHeading();
 
     new Setting(containerEl)
       .setName("Conversation")
@@ -3423,11 +3428,7 @@ class OpenClawSettingTab extends PluginSettingTab {
       );
 
     // ─── Connection (Advanced) ────────────────────────────────────
-    const advancedHeader = containerEl.createEl("h3", { text: "Connection", cls: "openclaw-settings-advanced-header" });
-    const advancedHint = containerEl.createEl("p", {
-      text: "These are set automatically by the setup wizard. Edit manually only if you know what you're doing.",
-      cls: "setting-item-description",
-    });
+    new Setting(containerEl).setName("Connection").setDesc("These are set automatically by the setup wizard. Edit manually only if you know what you're doing.").setHeading();
 
     new Setting(containerEl)
       .setName("Gateway URL")
