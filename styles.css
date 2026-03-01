@@ -1,5 +1,23 @@
 /* ObsidianClaw — Modern Chat UI */
 
+/* ─── Utility classes (ObsidianReviewBot compliance) ─────────────── */
+.oc-hidden { display: none !important; }
+.oc-flex { display: flex; }
+.oc-block { display: block; }
+.oc-inline { display: inline; }
+.oc-inline-block { display: inline-block; }
+.oc-opacity-low { opacity: 0.3; }
+
+/* Onboarding inline style replacements */
+.oc-req-label { font-size: 11px; color: var(--text-muted); }
+.oc-select-inline { flex: 0 0 auto; width: auto; }
+.oc-remove-btn { cursor: pointer; font-size: 18px; color: var(--text-muted); padding: 0 6px; }
+.oc-add-bot-btn { background: none; border: 1.5px dashed var(--background-modifier-border); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: var(--text-muted); cursor: pointer; margin-top: 8px; }
+.oc-name-input { flex: 1; }
+.oc-margin-top { margin-top: 12px; }
+.oc-details-summary { font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.oc-install-pre { font-size: 11px; color: var(--text-muted); background: var(--background-secondary); padding: 12px; border-radius: 8px; overflow: auto; max-height: 200px; margin-top: 8px; }
+
 /* Top bar (tabs + profile) */
 .openclaw-top-bar {
   display: flex;

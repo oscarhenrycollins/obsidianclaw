@@ -5,11 +5,13 @@ import {
   MarkdownRenderer,
   Modal,
   Notice,
+  Platform,
   Plugin,
   PluginSettingTab,
   Setting,
   TFile,
   WorkspaceLeaf,
+  setIcon,
 } from "obsidian";
 
 // ─── Settings ────────────────────────────────────────────────────────
@@ -86,10 +88,13 @@ async function getOrCreateDeviceIdentity(
   loadData: () => Promise<Record<string, unknown> | null>,
   saveData: (data: Record<string, unknown>) => Promise<void>
 ): Promise<DeviceIdentity> {
-  const data = await loadData() as Record<string, string | undefined> | null;
-  if (data?.deviceId && data?.devicePublicKey && data?.devicePrivateKey) {
+  const data = await loadData();
+  const deviceId = typeof data?.deviceId === "string" ? data.deviceId : null;
+  const devicePublicKey = typeof data?.devicePublicKey === "string" ? data.devicePublicKey : null;
+  const devicePrivateKey = typeof data?.devicePrivateKey === "string" ? data.devicePrivateKey : null;
+  if (deviceId && devicePublicKey && devicePrivateKey) {
     // Restore existing identity
-    const privBytes = fromBase64Url(data.devicePrivateKey);
+    const privBytes = fromBase64Url(devicePrivateKey);
     const cryptoKey = await crypto.subtle.importKey(
       "pkcs8",
       privBytes,
@@ -98,9 +103,9 @@ async function getOrCreateDeviceIdentity(
       ["sign"]
     );
     return {
-      deviceId: data.deviceId,
-      publicKey: data.devicePublicKey,
-      privateKey: data.devicePrivateKey,
+      deviceId,
+      publicKey: devicePublicKey,
+      privateKey: devicePrivateKey,
       cryptoKey,
     };
   }
@@ -109,18 +114,18 @@ async function getOrCreateDeviceIdentity(
   const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
   const pubRaw = new Uint8Array(await crypto.subtle.exportKey("raw", keyPair.publicKey));
   const privPkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey));
-  const deviceId = await sha256Hex(pubRaw);
+  const newDeviceId = await sha256Hex(pubRaw);
   const publicKey = toBase64Url(pubRaw);
   const privateKey = toBase64Url(privPkcs8);
 
   // Save to plugin data
-  const existing = (await loadData()) || {} as Record<string, unknown>;
-  existing.deviceId = deviceId;
+  const existing = (await loadData()) ?? {};
+  existing.deviceId = newDeviceId;
   existing.devicePublicKey = publicKey;
   existing.devicePrivateKey = privateKey;
-  await saveData(existing as Record<string, unknown>);
+  await saveData(existing);
 
-  return { deviceId, publicKey, privateKey, cryptoKey: keyPair.privateKey };
+  return { deviceId: newDeviceId, publicKey, privateKey, cryptoKey: keyPair.privateKey };
 }
 
 async function signDevicePayload(identity: DeviceIdentity, payload: string): Promise<string> {
@@ -521,6 +526,31 @@ class OnboardingModal extends Modal {
     if (this.pairingPollTimer) { clearInterval(this.pairingPollTimer); this.pairingPollTimer = null; }
   }
 
+  /** Safely render simple HTML (text, <a>, <code>, <strong>) into an element using DOM API */
+  private setRichText(el: HTMLElement, html: string): void {
+    el.empty();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<span>${html}</span>`, "text/html");
+    const source = doc.body.firstElementChild;
+    if (!source) { el.setText(html); return; }
+    for (const node of Array.from(source.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        el.appendText(node.textContent ?? "");
+      } else if (node instanceof HTMLElement) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === "a") {
+          el.createEl("a", { text: node.textContent ?? "", href: node.getAttribute("href") ?? "" });
+        } else if (tag === "code") {
+          el.createEl("code", { text: node.textContent ?? "" });
+        } else if (tag === "strong") {
+          el.createEl("strong", { text: node.textContent ?? "" });
+        } else {
+          el.appendText(node.textContent ?? "");
+        }
+      }
+    }
+  }
+
   private renderStep(): void {
     const { contentEl } = this;
     contentEl.empty();
@@ -596,7 +626,7 @@ class OnboardingModal extends Modal {
     for (const f of fields) {
       const group = el.createDiv("openclaw-onboard-field");
       const label = group.createEl("label", { text: f.label });
-      if (f.required) { const req = label.createSpan(); req.textContent = " (required)"; req.style.cssText = "font-size:11px;color:var(--text-muted)"; }
+      if (f.required) { const req = label.createSpan({ cls: "oc-req-label" }); req.textContent = " (required)"; }
       const input = group.createEl("input", {
         type: "password",
         value: this.setupKeys[f.key],
@@ -605,11 +635,11 @@ class OnboardingModal extends Modal {
       });
       input.addEventListener("input", () => { this.setupKeys[f.key] = input.value.trim(); });
       const help = group.createDiv("openclaw-onboard-hint");
-      help.innerHTML = f.help;
+      this.setRichText(help, f.help);
     }
 
     const note = el.createDiv("openclaw-onboard-info");
-    note.innerHTML = "🔒 Keys stay on your device. The install command runs entirely on your server.";
+    note.setText("🔒 Keys stay on your device. The install command runs entirely on your server.");
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
@@ -635,12 +665,10 @@ class OnboardingModal extends Modal {
     this.setupBots.forEach((bot, i) => {
       const card = listEl.createDiv("openclaw-onboard-bot-card");
       const row = card.createDiv("openclaw-onboard-bot-row");
-      const nameInput = row.createEl("input", { type: "text", value: bot.name, placeholder: "Bot name", cls: "openclaw-onboard-input" });
-      nameInput.style.flex = "1";
+      const nameInput = row.createEl("input", { type: "text", value: bot.name, placeholder: "Bot name", cls: "openclaw-onboard-input oc-name-input" });
       nameInput.addEventListener("input", () => { bot.name = nameInput.value; });
 
-      const select = row.createEl("select", { cls: "openclaw-onboard-input" });
-      select.style.cssText = "flex:0 0 auto;width:auto";
+      const select = row.createEl("select", { cls: "openclaw-onboard-input oc-select-inline" });
       for (const m of OnboardingModal.MODELS) {
         const opt = select.createEl("option", { text: m.label, value: m.id });
         if (m.id === bot.model) opt.selected = true;
@@ -648,19 +676,18 @@ class OnboardingModal extends Modal {
       select.addEventListener("change", () => { bot.model = select.value; });
 
       if (this.setupBots.length > 1) {
-        const removeBtn = row.createEl("span", { text: "×" });
-        removeBtn.style.cssText = "cursor:pointer;font-size:18px;color:var(--text-muted);padding:0 6px";
+        const removeBtn = row.createEl("span", { text: "×", cls: "oc-remove-btn" });
         removeBtn.addEventListener("click", () => { this.setupBots.splice(i, 1); this.renderStep(); });
       }
     });
 
-    const addBtn = el.createEl("button", { text: "+ add another bot" });
-    addBtn.style.cssText = "background:none;border:1.5px dashed var(--background-modifier-border);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--text-muted);cursor:pointer;margin-top:8px";
+    const addBtn = el.createEl("button", { text: "+ add another bot", cls: "oc-add-bot-btn" });
     addBtn.addEventListener("click", () => { this.setupBots.push({ name: '', model: 'anthropic/claude-sonnet-4-6' }); this.renderStep(); });
 
-    const note = el.createDiv("openclaw-onboard-hint");
-    note.style.marginTop = "12px";
-    note.innerHTML = "Each bot gets a folder like <code>AGENT-YOURBOT/</code> in your vault.";
+    const note = el.createDiv("openclaw-onboard-hint oc-margin-top");
+    note.createEl("span", { text: "Each bot gets a folder like " });
+    note.createEl("code", { text: "AGENT-YOURBOT/" });
+    note.createEl("span", { text: " in your vault." });
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
 
@@ -680,7 +707,8 @@ class OnboardingModal extends Modal {
     });
 
     const config = this.generateConfig();
-    const configB64 = btoa(unescape(encodeURIComponent(JSON.stringify(config, null, 2))));
+    const configJson = JSON.stringify(config, null, 2);
+    const configB64 = btoa(Array.from(new TextEncoder().encode(configJson), b => String.fromCharCode(b)).join(''));
     const installCmd = `curl -fsSL https://openclaw.ai/install.sh | bash && echo '${configB64}' | base64 -d > ~/.openclaw/openclaw.json && openclaw gateway restart`;
 
     this.makeCopyBox(el, installCmd);
@@ -688,11 +716,9 @@ class OnboardingModal extends Modal {
     el.createEl("p", { text: "This installs OpenClaw, writes your config with all API keys and bot settings, configures Tailscale Serve, and starts the gateway.", cls: "openclaw-onboard-hint" });
 
     // Expandable config preview
-    const details = el.createEl("details");
-    details.style.marginTop = "12px";
-    details.createEl("summary", { text: "Preview config" }).style.cssText = "font-size:13px;color:var(--text-muted);cursor:pointer";
-    const pre = details.createEl("pre");
-    pre.style.cssText = "font-size:11px;color:var(--text-muted);background:var(--background-secondary);padding:12px;border-radius:8px;overflow:auto;max-height:200px;margin-top:8px";
+    const details = el.createEl("details", { cls: "oc-margin-top" });
+    details.createEl("summary", { text: "Preview config", cls: "oc-details-summary" });
+    const pre = details.createEl("pre", { cls: "oc-install-pre" });
     pre.textContent = JSON.stringify(config, null, 2);
 
     el.createEl("p", { text: "After it finishes, install Tailscale if you haven't:", cls: "openclaw-onboard-desc" });
@@ -745,9 +771,15 @@ class OnboardingModal extends Modal {
 
     const steps = el.createEl("ol", { cls: "openclaw-onboard-list" });
     const s1 = steps.createEl("li");
-    s1.innerHTML = "Install on your <strong>gateway machine</strong>: <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    s1.appendText("Install on your ");
+    s1.createEl("strong", { text: "gateway machine" });
+    s1.appendText(": ");
+    s1.createEl("a", { text: "tailscale.com/download", href: "https://tailscale.com/download" });
     const s2 = steps.createEl("li");
-    s2.innerHTML = "Install on <strong>this device</strong>: <a href='https://tailscale.com/download'>tailscale.com/download</a>";
+    s2.appendText("Install on ");
+    s2.createEl("strong", { text: "this device" });
+    s2.appendText(": ");
+    s2.createEl("a", { text: "tailscale.com/download", href: "https://tailscale.com/download" });
     steps.createEl("li", { text: "Sign in to the same Tailscale account on both." });
 
     el.createEl("p", { text: "Verify by running this on the gateway:", cls: "openclaw-onboard-hint" });
@@ -781,10 +813,14 @@ class OnboardingModal extends Modal {
     this.makeCopyBox(el, "cat ~/.openclaw/openclaw.json | grep token");
 
     const hint = el.createDiv("openclaw-onboard-hint");
-    hint.innerHTML = "Copy the <code>https://your-machine.tailXXXX.ts.net</code> URL and the auth token for the next step.";
+    hint.appendText("Copy the ");
+    hint.createEl("code", { text: "https://your-machine.tailXXXX.ts.net" });
+    hint.appendText(" URL and the auth token for the next step.");
 
     const trouble = el.createDiv("openclaw-onboard-info");
-    trouble.innerHTML = "💡 <strong>Not working?</strong> Run: ";
+    trouble.appendText("💡 ");
+    trouble.createEl("strong", { text: "Not working?" });
+    trouble.appendText(" Run: ");
     this.makeCopyBox(trouble, "openclaw doctor --fix && openclaw gateway restart");
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
@@ -814,7 +850,13 @@ class OnboardingModal extends Modal {
       cls: "openclaw-onboard-input",
     });
     const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.innerHTML = "The URL from <code>tailscale serve status</code>. You can paste <code>https://</code> or <code>wss://</code> — both work.";
+    urlHint.appendText("The URL from ");
+    urlHint.createEl("code", { text: "tailscale serve status" });
+    urlHint.appendText(". You can paste ");
+    urlHint.createEl("code", { text: "https://" });
+    urlHint.appendText(" or ");
+    urlHint.createEl("code", { text: "wss://" });
+    urlHint.appendText(" — both work.");
 
     // Token input
     const tokenGroup = el.createDiv("openclaw-onboard-field");
@@ -830,30 +872,41 @@ class OnboardingModal extends Modal {
 
     // Troubleshooting (hidden until failure)
     const troubleshoot = el.createDiv("openclaw-onboard-troubleshoot");
-    troubleshoot.style.display = "none";
+    troubleshoot.addClass("oc-hidden");
     troubleshoot.createEl("h3", { text: "Troubleshooting" });
 
     const checks = troubleshoot.createEl("ol", { cls: "openclaw-onboard-list" });
 
     const li1 = checks.createEl("li");
-    li1.innerHTML = "<strong>Is Tailscale connected on this device?</strong> Check the Tailscale icon in your system tray / menu bar. If it's off, turn it on.";
+    li1.createEl("strong", { text: "Is Tailscale connected on this device?" });
+    li1.appendText(" Check the Tailscale icon in your system tray / menu bar. If it's off, turn it on.");
 
     const li2 = checks.createEl("li");
-    li2.innerHTML = "<strong>DNS not resolving? (most common on macOS)</strong> Open the <strong>Tailscale app</strong> from your menu bar, toggle it <strong>OFF</strong>, wait 5 seconds, toggle it <strong>ON</strong>. This resets MagicDNS, which macOS sometimes loses track of.";
+    li2.createEl("strong", { text: "DNS not resolving? (most common on macOS)" });
+    li2.appendText(" Open the ");
+    li2.createEl("strong", { text: "Tailscale app" });
+    li2.appendText(" from your menu bar, toggle it ");
+    li2.createEl("strong", { text: "OFF" });
+    li2.appendText(", wait 5 seconds, toggle it ");
+    li2.createEl("strong", { text: "ON" });
+    li2.appendText(". This resets MagicDNS, which macOS sometimes loses track of.");
 
     const li3 = checks.createEl("li");
-    li3.innerHTML = "Is the gateway running? On the gateway machine, run:";
+    li3.setText("Is the gateway running? On the gateway machine, run:");
     this.makeCopyBox(troubleshoot, "openclaw doctor --fix && openclaw gateway restart");
 
     const li4 = checks.createEl("li");
-    li4.innerHTML = "Is Tailscale Serve active? On the gateway machine, run:";
+    li4.setText("Is Tailscale Serve active? On the gateway machine, run:");
     this.makeCopyBox(troubleshoot, "tailscale serve status");
     const tsHint = troubleshoot.createDiv("openclaw-onboard-hint");
-    tsHint.innerHTML = "If Tailscale Serve shows nothing, set it up:";
+    tsHint.setText("If Tailscale Serve shows nothing, set it up:");
     this.makeCopyBox(troubleshoot, "tailscale serve --bg http://127.0.0.1:18789");
 
     const li5 = checks.createEl("li");
-    li5.innerHTML = "<strong>Gateway config broken?</strong> If <code>openclaw doctor</code> shows \"Invalid config\" errors, your gateway config file may have been corrupted. To reset to the recommended setup, run these on the gateway machine:";
+    li5.createEl("strong", { text: "Gateway config broken?" });
+    li5.appendText(" If ");
+    li5.createEl("code", { text: "openclaw doctor" });
+    li5.appendText(' shows "Invalid config" errors, your gateway config file may have been corrupted. To reset to the recommended setup, run these on the gateway machine:');
     this.makeCopyBox(troubleshoot, `cat ~/.openclaw/openclaw.json | python3 -c "
 import json, sys
 c = json.load(sys.stdin)
@@ -864,11 +917,12 @@ json.dump(c, open(sys.argv[1], 'w'), indent=2)
 print('Config fixed: bind=loopback, tailscale.mode=serve')
 " ~/.openclaw/openclaw.json`);
     const li5hint = troubleshoot.createDiv("openclaw-onboard-hint");
-    li5hint.innerHTML = "Then restart the gateway and re-enable Tailscale Serve:";
+    li5hint.setText("Then restart the gateway and re-enable Tailscale Serve:");
     this.makeCopyBox(troubleshoot, "openclaw gateway restart && tailscale serve --bg http://127.0.0.1:18789");
 
     const li6 = checks.createEl("li");
-    li6.innerHTML = "<strong>Still stuck?</strong> Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.";
+    li6.createEl("strong", { text: "Still stuck?" });
+    li6.appendText(" Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
@@ -887,7 +941,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
       testBtn.disabled = true;
       testBtn.textContent = "Connecting...";
-      troubleshoot.style.display = "none";
+      troubleshoot.addClass("oc-hidden");
       this.showStatus("Testing connection...", "info");
 
       // Always reset to "main" session to ensure clean connection
@@ -915,7 +969,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
         setTimeout(() => { this.step = 4; this.renderStep(); }, 800);
       } else {
         this.showStatus("Could not connect. Check the troubleshooting steps below.", "error");
-        troubleshoot.style.display = "";
+        troubleshoot.removeClass("oc-hidden");
       }
     })());
   }
@@ -948,7 +1002,9 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     if (hasKeys) {
       const info = el.createDiv("openclaw-onboard-info");
       info.createEl("p", { text: "This device already has a keypair." });
-      info.createEl("p").innerHTML = `Device ID: <code>${this.plugin.settings.deviceId?.slice(0, 12)}...</code>`;
+      const deviceP = info.createEl("p");
+      deviceP.appendText("Device ID: ");
+      deviceP.createEl("code", { text: (this.plugin.settings.deviceId?.slice(0, 12) ?? "") + "..." });
     }
 
     this.statusEl = el.createDiv("openclaw-onboard-status");
@@ -962,7 +1018,9 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     a1.createEl("p", { text: "You'll see your pending request. Approve it with:", cls: "openclaw-onboard-hint" });
     this.makeCopyBox(a1, "openclaw devices approve <requestId>");
     const a1hint = a1.createEl("p", { cls: "openclaw-onboard-hint" });
-    a1hint.innerHTML = "Replace <code>&lt;requestId&gt;</code> with the ID shown in the pending list. You can also approve from the OpenClaw Control UI dashboard.";
+    a1hint.appendText("Replace ");
+    a1hint.createEl("code", { text: "<requestId>" });
+    a1hint.appendText(" with the ID shown in the pending list. You can also approve from the OpenClaw Control UI dashboard.");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 3; this.renderStep(); });
@@ -1066,7 +1124,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     const controlTip = el.createDiv("openclaw-onboard-info");
     controlTip.createEl("strong", { text: "🖥️ control UI: " });
     const ctrlSpan = controlTip.createEl("span");
-    ctrlSpan.innerHTML = "You can also manage your gateway from any browser on your Tailscale network. Just open your gateway URL in a browser.";
+    ctrlSpan.setText("You can also manage your gateway from any browser on your Tailscale network. Just open your gateway URL in a browser.");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
     const doneBtn = btnRow.createEl("button", { text: "Start chatting →", cls: "mod-cta" });
@@ -1202,10 +1260,10 @@ class OpenClawChatView extends ItemView {
 
     // Agent switcher dropdown (hidden by default)
     this.profileDropdownEl = container.createDiv("openclaw-agent-dropdown");
-    this.profileDropdownEl.style.display = "none";
+    this.profileDropdownEl.addClass("oc-hidden");
 
     // Close dropdown when clicking outside
-    document.addEventListener("click", () => { if (this.profileDropdownEl) this.profileDropdownEl.style.display = "none"; });
+    document.addEventListener("click", () => { if (this.profileDropdownEl) this.profileDropdownEl.addClass("oc-hidden"); });
 
     // We'll render tabs after loading sessions
     void this.renderTabs();
@@ -1219,14 +1277,14 @@ class OpenClawChatView extends ItemView {
 
     // Status banner (compaction, etc.) — hidden by default
     this.bannerEl = container.createDiv("openclaw-banner");
-    this.bannerEl.style.display = "none";
+    this.bannerEl.addClass("oc-hidden");
 
     // Messages area
     this.messagesEl = container.createDiv("openclaw-messages");
 
     // Typing indicator (hidden by default)
     this.typingEl = container.createDiv("openclaw-typing");
-    this.typingEl.style.display = "none";
+    this.typingEl.addClass("oc-hidden");
     const typingDots = this.typingEl.createDiv("openclaw-typing-inner");
     typingDots.createSpan({ text: "Thinking", cls: "openclaw-typing-text" });
     const dotsEl = typingDots.createSpan("openclaw-typing-dots");
@@ -1239,16 +1297,16 @@ class OpenClawChatView extends ItemView {
     const inputRow = inputArea.createDiv("openclaw-input-row");
     // Brain button (model picker)
     const brainBtn = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
-    brainBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 14l.9 2.7L22.6 17.6l-2.7.9L19 21.2l-.9-2.7-2.7-.9 2.7-.9z"/><path d="M6 17l.6 1.8L8.4 19.4l-1.8.6L6 21.8l-.6-1.8-1.8-.6 1.8-.6z"/></svg>`;
+    setIcon(brainBtn, "brain");
     brainBtn.addEventListener("click", () => this.openModelPicker());
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
-    attachBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`;
+    setIcon(attachBtn, "paperclip");
     this.fileInputEl = inputArea.createEl("input", {
       cls: "openclaw-file-input",
       attr: { type: "file", accept: "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css", multiple: "true" },
     });
-    this.fileInputEl.style.display = "none";
+    this.fileInputEl.addClass("oc-hidden");
     this.fileInputEl.addEventListener("change", () => void this.handleFileSelect());
     attachBtn.addEventListener("click", () => this.fileInputEl.click());
     this.inputEl = inputRow.createEl("textarea", {
@@ -1257,17 +1315,17 @@ class OpenClawChatView extends ItemView {
     });
     // Attachment preview (hidden by default)
     this.attachPreviewEl = inputArea.createDiv("openclaw-attach-preview");
-    this.attachPreviewEl.style.display = "none";
+    this.attachPreviewEl.addClass("oc-hidden");
     this.abortBtn = inputRow.createEl("button", { cls: "openclaw-abort-btn", attr: { "aria-label": "Stop" } });
-    this.abortBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
-    this.abortBtn.style.display = "none";
+    setIcon(this.abortBtn, "square");
+    this.abortBtn.addClass("oc-hidden");
     const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
     this.sendBtn = sendWrapper.createEl("button", { cls: "openclaw-send-btn", attr: { "aria-label": "Send" } });
-    this.sendBtn.innerHTML = this.sendSvg;
-    this.sendBtn.style.opacity = "0.3";
+    setIcon(this.sendBtn, "send");
+    this.sendBtn.addClass("oc-opacity-low");
     this.reconnectBtn = sendWrapper.createEl("button", { cls: "openclaw-reconnect-btn", attr: { "aria-label": "Reconnect" } });
-    this.reconnectBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
-    this.reconnectBtn.style.display = "none";
+    setIcon(this.reconnectBtn, "refresh-cw");
+    this.reconnectBtn.addClass("oc-hidden");
     this.reconnectBtn.addEventListener("click", () => {
       void this.plugin.connectGateway();
     });
@@ -1278,9 +1336,7 @@ class OpenClawChatView extends ItemView {
       if (e.key === "Enter") {
         // Mobile: Enter always creates new line (use send button to send)
         // Desktop: Enter sends, Shift+Enter creates new line
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
-          (navigator.maxTouchPoints > 0 && window.innerWidth < 768);
-        if (isMobile) {
+        if (Platform.isMobile) {
           // Let Enter create a new line naturally
           return;
         }
@@ -1329,7 +1385,7 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  async onClose(): Promise<void> {
+  onClose(): void {
     if (this.plugin.chatView === this) {
       this.plugin.chatView = null;
     }
@@ -1343,13 +1399,13 @@ class OpenClawChatView extends ItemView {
 
     // Swap send button for reconnect when disconnected
     if (connected) {
-      this.sendBtn.style.display = "";
-      if (this.reconnectBtn) this.reconnectBtn.style.display = "none";
+      this.sendBtn.removeClass("oc-hidden");
+      if (this.reconnectBtn) this.reconnectBtn.addClass("oc-hidden");
       this.inputEl.disabled = false;
       this.inputEl.placeholder = "Message...";
     } else {
-      this.sendBtn.style.display = "none";
-      if (this.reconnectBtn) this.reconnectBtn.style.display = "";
+      this.sendBtn.addClass("oc-hidden");
+      if (this.reconnectBtn) this.reconnectBtn.removeClass("oc-hidden");
       this.inputEl.disabled = true;
       this.inputEl.placeholder = "Disconnected";
     }
@@ -1400,12 +1456,13 @@ class OpenClawChatView extends ItemView {
   private updateAgentButton(): void {
     if (!this.profileBtnEl) return;
     if (this.agents.length <= 1) {
-      this.profileBtnEl.style.display = "none";
+      this.profileBtnEl.addClass("oc-hidden");
       return;
     }
-    this.profileBtnEl.style.display = "";
+    this.profileBtnEl.removeClass("oc-hidden");
     const emoji = this.activeAgent.emoji || "🤖";
-    this.profileBtnEl.innerHTML = `<span class="openclaw-agent-emoji">${emoji}</span>`;
+    this.profileBtnEl.empty();
+    this.profileBtnEl.createSpan({ text: emoji, cls: "openclaw-agent-emoji" });
   }
 
   /** Switch to a different agent */
@@ -1423,9 +1480,9 @@ class OpenClawChatView extends ItemView {
   /** Toggle the agent switcher dropdown */
   private toggleAgentSwitcher(): void {
     if (!this.profileDropdownEl) return;
-    const visible = this.profileDropdownEl.style.display !== "none";
+    const visible = !this.profileDropdownEl.hasClass("oc-hidden");
     if (visible) {
-      this.profileDropdownEl.style.display = "none";
+      this.profileDropdownEl.addClass("oc-hidden");
       return;
     }
     this.profileDropdownEl.empty();
@@ -1441,13 +1498,13 @@ class OpenClawChatView extends ItemView {
       }
       if (!isActive) {
         item.addEventListener("click", () => {
-          this.profileDropdownEl!.style.display = "none";
+          this.profileDropdownEl!.addClass("oc-hidden");
           void this.switchAgent(agent);
         });
       }
     }
 
-    this.profileDropdownEl.style.display = "block";
+    this.profileDropdownEl.removeClass("oc-hidden");
   }
 
   async loadHistory(): Promise<void> {
@@ -1558,13 +1615,11 @@ class OpenClawChatView extends ItemView {
 
   private updateSendButton(): void {
     if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
-      this.sendBtn.innerHTML = this.sendSvg;
       this.sendBtn.setAttribute("aria-label", "Send");
-      this.sendBtn.style.opacity = "1";
+      this.sendBtn.removeClass("oc-opacity-low");
     } else {
-      this.sendBtn.innerHTML = this.sendSvg;
       this.sendBtn.setAttribute("aria-label", "Send");
-      this.sendBtn.style.opacity = "0.3";
+      this.sendBtn.addClass("oc-opacity-low");
     }
   }
 
@@ -1644,8 +1699,8 @@ class OpenClawChatView extends ItemView {
     };
     this.streams.set(sendSessionKey, ss);
     this.runToSession.set(runId, sendSessionKey);
-    this.abortBtn.style.display = "";
-    this.typingEl.style.display = "";
+    this.abortBtn.removeClass("oc-hidden");
+    this.typingEl.removeClass("oc-hidden");
     const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
     if (thinkText) thinkText.textContent = "Thinking";
     this.scrollToBottom();
@@ -1661,7 +1716,7 @@ class OpenClawChatView extends ItemView {
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
       this.streams.delete(sendSessionKey);
       this.runToSession.delete(runId);
-      this.abortBtn.style.display = "none";
+      this.abortBtn.addClass("oc-hidden");
       await this.renderMessages();
     }
   }
@@ -1703,7 +1758,7 @@ class OpenClawChatView extends ItemView {
         fullMessage = text;
       }
       this.pendingAttachments = [];
-      this.attachPreviewEl.style.display = "none";
+      this.attachPreviewEl.addClass("oc-hidden");
     }
 
     this.messages.push({ role: "user", text: displayText || text, images: userImages, timestamp: Date.now() });
@@ -1727,8 +1782,8 @@ class OpenClawChatView extends ItemView {
     this.runToSession.set(runId, sendSessionKey);
 
     // Show UI for active tab
-    this.abortBtn.style.display = "";
-    this.typingEl.style.display = "";
+    this.abortBtn.removeClass("oc-hidden");
+    this.typingEl.removeClass("oc-hidden");
     const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
     if (thinkText) thinkText.textContent = "Thinking";
     this.scrollToBottom();
@@ -1761,7 +1816,7 @@ class OpenClawChatView extends ItemView {
       this.messages.push({ role: "assistant", text: `Error: ${e}`, images: [], timestamp: Date.now() });
       this.streams.delete(sendSessionKey);
       this.runToSession.delete(runId);
-      this.abortBtn.style.display = "none";
+      this.abortBtn.addClass("oc-hidden");
       await this.renderMessages();
     } finally {
       this.sending = false;
@@ -1796,12 +1851,12 @@ class OpenClawChatView extends ItemView {
       const used = session.totalTokens || 0;
       const max = session.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
-      this.contextFillEl.style.width = pct + "%";
+      this.contextFillEl.setCssStyles({ width: pct + "%" });
       this.contextFillEl.className = "openclaw-context-fill" + (pct > 80 ? " openclaw-context-high" : pct > 60 ? " openclaw-context-mid" : "");
       this.contextLabelEl.textContent = `${pct}%`;
       // Update active tab meter bar
       const activeFill = this.tabBarEl?.querySelector(".openclaw-tab.active .openclaw-tab-meter-fill") as HTMLElement;
-      if (activeFill) activeFill.style.width = pct + "%";
+      if (activeFill) (activeFill as HTMLElement).setCssStyles({ width: pct + "%" });
       // Update model label from session data (but don't overwrite a recent manual switch)
       const fullModel = session.model || "";
       const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
@@ -1965,15 +2020,15 @@ class OpenClawChatView extends ItemView {
       // Progress bar (gray container, black fill)
       const meter = tabEl.createDiv({ cls: "openclaw-tab-meter" });
       const fill = meter.createDiv({ cls: "openclaw-tab-meter-fill" });
-      fill.style.width = tab.pct + "%";
+      fill.setCssStyles({ width: tab.pct + "%" });
 
       // Click to switch
       if (!isCurrent) {
         tabEl.addEventListener("click", () => void (async () => {
           // Clear DOM from old tab
           this.streamEl = null;
-          this.typingEl.style.display = "none";
-          this.abortBtn.style.display = "none";
+          this.typingEl.addClass("oc-hidden");
+          this.abortBtn.addClass("oc-hidden");
           this.hideBanner();
 
           this.plugin.settings.sessionKey = tab.key;
@@ -2017,8 +2072,8 @@ class OpenClawChatView extends ItemView {
         } catch { /* label optional */ }
         // Switch to it - clear old tab's stream UI
         this.streamEl = null;
-        this.typingEl.style.display = "none";
-        this.abortBtn.style.display = "none";
+        this.typingEl.addClass("oc-hidden");
+        this.abortBtn.addClass("oc-hidden");
         this.hideBanner();
 
         this.plugin.settings.sessionKey = sessionKey;
@@ -2212,10 +2267,10 @@ class OpenClawChatView extends ItemView {
   private renderAttachPreview(): void {
     this.attachPreviewEl.empty();
     if (this.pendingAttachments.length === 0) {
-      this.attachPreviewEl.style.display = "none";
+      this.attachPreviewEl.addClass("oc-hidden");
       return;
     }
-    this.attachPreviewEl.style.display = "flex";
+    this.attachPreviewEl.removeClass("oc-hidden");
 
     for (let i = 0; i < this.pendingAttachments.length; i++) {
       const att = this.pendingAttachments[i];
@@ -2243,34 +2298,34 @@ class OpenClawChatView extends ItemView {
   }
 
   private buildToolLabel(toolName: string, args: Record<string, unknown> | undefined): { label: string; url?: string } {
-    const a = args || {} as Record<string, unknown>;
+    const a = args ?? {};
     switch (toolName) {
       case "exec": {
-        const cmd = String(a.command || "");
+        const cmd = String(a?.command ?? "");
         const short = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
         return { label: `🔧 ${short || "Running command"}` };
       }
       case "read": case "Read": {
-        const p = String(a.path || a.file_path || "");
+        const p = String(a?.path ?? a?.file_path ?? "");
         const name = p.split("/").pop() || "file";
         return { label: `📄 Reading ${name}` };
       }
       case "write": case "Write": {
-        const p = String(a.path || a.file_path || "");
+        const p = String(a?.path ?? a?.file_path ?? "");
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Writing ${name}` };
       }
       case "edit": case "Edit": {
-        const p = String(a.path || a.file_path || "");
+        const p = String(a?.path ?? a?.file_path ?? "");
         const name = p.split("/").pop() || "file";
         return { label: `✏️ Editing ${name}` };
       }
       case "web_search": {
-        const q = String(a.query || "");
+        const q = String(a?.query ?? "");
         return { label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "web_fetch": {
-        const rawUrl = String(a.url || "");
+        const rawUrl = String(a?.url ?? "");
         try {
           const domain = new URL(rawUrl).hostname;
           return { label: `🌐 Fetching ${domain}`, url: rawUrl };
@@ -2283,11 +2338,11 @@ class OpenClawChatView extends ItemView {
       case "image":
         return { label: "👁️ Viewing image" };
       case "memory_search": {
-        const q = String(a.query || "");
+        const q = String(a?.query ?? "");
         return { label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"` };
       }
       case "memory_get": {
-        const p = String(a.path || "");
+        const p = String(a?.path ?? "");
         const name = p.split("/").pop() || "memory";
         return { label: `🧠 Reading ${name}` };
       }
@@ -2323,7 +2378,9 @@ class OpenClawChatView extends ItemView {
     if (active) {
       const dots = document.createElement("span");
       dots.className = "openclaw-tool-dots";
-      dots.innerHTML = '<span class="openclaw-dot"></span><span class="openclaw-dot"></span><span class="openclaw-dot"></span>';
+      dots.createSpan("openclaw-dot");
+      dots.createSpan("openclaw-dot");
+      dots.createSpan("openclaw-dot");
       el.appendChild(dots);
     }
     this.messagesEl.appendChild(el);
@@ -2340,40 +2397,20 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  private async playTTSAudio(audioPath: string): Promise<void> {
-    try {
-      // Works in Electron/Obsidian (same machine as gateway)
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require("fs") as typeof import("fs");
-      const buffer = fs.readFileSync(audioPath);
-      const ext = audioPath.split(".").pop()?.toLowerCase() || "opus";
-      const mimeMap: Record<string, string> = {
-        opus: "audio/ogg; codecs=opus",
-        mp3: "audio/mpeg",
-        mp4: "audio/mp4",
-        wav: "audio/wav",
-        ogg: "audio/ogg",
-      };
-      const mime = mimeMap[ext] || "audio/ogg; codecs=opus";
-      const blob = new Blob([buffer], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.onended = () => URL.revokeObjectURL(url);
-      await audio.play();
-    } catch {
-      // Silently ignore — remote devices don't have local file access
-    }
+  private async playTTSAudio(_audioPath: string): Promise<void> {
+    // Local file system access not available in the Obsidian plugin sandbox.
+    // Audio is streamed via gateway HTTP using renderAudioPlayer instead.
   }
 
   private showBanner(text: string): void {
     if (!this.bannerEl) return;
     this.bannerEl.textContent = text;
-    this.bannerEl.style.display = "";
+    this.bannerEl.removeClass("oc-hidden");
   }
 
   private hideBanner(): void {
     if (!this.bannerEl) return;
-    this.bannerEl.style.display = "none";
+    this.bannerEl.addClass("oc-hidden");
   }
 
   /** Resolve which session a stream/agent event belongs to */
@@ -2388,7 +2425,7 @@ class OpenClawChatView extends ItemView {
     }
     // Fall back to runId mapping
     const data = payload.data as GatewayPayload | undefined;
-    const runId = String(payload.runId || data?.runId || "");
+    const runId = String(payload.runId ?? data?.runId ?? "");
     if (runId && this.runToSession.has(runId)) return this.runToSession.get(runId)!;
     // Last resort: if only one stream is active, use that
     if (this.streams.size === 1) return this.streams.keys().next().value!;
@@ -2396,8 +2433,8 @@ class OpenClawChatView extends ItemView {
   }
 
   handleStreamEvent(payload: GatewayPayload): void {
-    const stream = String(payload.stream || "");
-    const state = String(payload.state || "");
+    const stream = String(payload.stream ?? "");
+    const state = String(payload.state ?? "");
     const payloadData = payload.data as GatewayPayload | undefined;
 
     const sessionKey = this.resolveStreamSession(payload);
@@ -2406,7 +2443,7 @@ class OpenClawChatView extends ItemView {
     // Compaction can arrive without an active stream
     if (!sessionKey || !this.streams.has(sessionKey)) {
       if (stream === "compaction" || state === "compacting") {
-        const cPhase = String(payloadData?.phase || "");
+        const cPhase = String(payloadData?.phase ?? "");
         if (isActiveTab || !sessionKey) {
           if (cPhase === "end") {
             setTimeout(() => this.hideBanner(), 2000);
@@ -2428,27 +2465,27 @@ class OpenClawChatView extends ItemView {
         if (!ss.workingTimer) {
           ss.workingTimer = setTimeout(() => {
             if (this.streams.has(sessionKey)) {
-              if (isActiveTab && this.typingEl.style.display === "none") {
+              if (isActiveTab && this.typingEl.hasClass("oc-hidden")) {
                 if (typingText) typingText.textContent = "Working";
-                this.typingEl.style.display = "";
+                this.typingEl.removeClass("oc-hidden");
               }
             }
             ss.workingTimer = null;
           }, 500);
         }
       } else if (!ss.text && !ss.lastDeltaTime && isActiveTab) {
-        this.typingEl.style.display = "";
+        this.typingEl.removeClass("oc-hidden");
       }
     } else if (state === "lifecycle") {
       if (!ss.text && isActiveTab && typingText) {
         typingText.textContent = "Thinking";
-        this.typingEl.style.display = "";
+        this.typingEl.removeClass("oc-hidden");
       }
     }
 
     // Handle explicit tool events
-    const toolName = String(payloadData?.name || payloadData?.toolName || payload.toolName || payload.name || "");
-    const phase = String(payloadData?.phase || payload.phase || "");
+    const toolName = String(payloadData?.name ?? payloadData?.toolName ?? payload.toolName ?? payload.name ?? "");
+    const phase = String(payloadData?.phase ?? payload.phase ?? "");
 
     if ((stream === "tool" || toolName) && (phase === "start" || state === "tool_use")) {
       if (ss.compactTimer) { clearTimeout(ss.compactTimer); ss.compactTimer = null; }
@@ -2462,13 +2499,13 @@ class OpenClawChatView extends ItemView {
       if (isActiveTab) {
         this.appendToolCall(label, url, true);
         if (typingText) typingText.textContent = label;
-        this.typingEl.style.display = "";
+        this.typingEl.removeClass("oc-hidden");
       }
     } else if ((stream === "tool" || toolName) && phase === "result") {
       if (isActiveTab) {
         this.deactivateLastToolItem();
         if (typingText) typingText.textContent = "Thinking";
-        this.typingEl.style.display = "";
+        this.typingEl.removeClass("oc-hidden");
         this.scrollToBottom();
       }
     } else if (stream === "compaction" || state === "compacting") {
@@ -2479,7 +2516,7 @@ class OpenClawChatView extends ItemView {
         ss.items.push({ type: "tool", label: "Compacting memory" });
         if (isActiveTab) {
           this.appendToolCall("Compacting memory");
-          this.typingEl.style.display = "none";
+          this.typingEl.addClass("oc-hidden");
           this.showBanner("Compacting context...");
         }
       }
@@ -2510,7 +2547,7 @@ class OpenClawChatView extends ItemView {
 
     const ss = this.streams.get(eventSessionKey);
     const isActiveTab = eventSessionKey === this.activeSessionKey;
-    const chatState = String(payload.state || "");
+    const chatState = String(payload.state ?? "");
 
     // No active stream for this session (passive device): still refresh history
     if (!ss && (chatState === "final" || chatState === "aborted" || chatState === "error")) {
@@ -2529,7 +2566,7 @@ class OpenClawChatView extends ItemView {
       if (text) {
         ss.text = text;
         if (isActiveTab) {
-          this.typingEl.style.display = "none";
+          this.typingEl.addClass("oc-hidden");
           this.hideBanner();
           this.updateStreamBubble();
         }
@@ -2588,8 +2625,8 @@ class OpenClawChatView extends ItemView {
     if (sk === this.activeSessionKey) {
       this.hideBanner();
       this.streamEl = null;
-      this.abortBtn.style.display = "none";
-      this.typingEl.style.display = "none";
+      this.abortBtn.addClass("oc-hidden");
+      this.typingEl.addClass("oc-hidden");
       const typingText = this.typingEl.querySelector(".openclaw-typing-text");
       if (typingText) typingText.textContent = "Thinking";
     }
@@ -2601,7 +2638,7 @@ class OpenClawChatView extends ItemView {
     if (!ss) return;
 
     // Show abort button
-    this.abortBtn.style.display = "";
+    this.abortBtn.removeClass("oc-hidden");
 
     // Restore tool call items in the DOM
     for (const item of ss.items) {
@@ -2616,12 +2653,12 @@ class OpenClawChatView extends ItemView {
       // If text is streaming, show working indicator (text exists but might still be coming)
       const typingText = this.typingEl.querySelector(".openclaw-typing-text");
       if (typingText) typingText.textContent = "Working";
-      this.typingEl.style.display = "";
+      this.typingEl.removeClass("oc-hidden");
     } else {
       // No text yet, show thinking
       const typingText = this.typingEl.querySelector(".openclaw-typing-text");
       if (typingText) typingText.textContent = "Thinking";
-      this.typingEl.style.display = "";
+      this.typingEl.removeClass("oc-hidden");
     }
 
     this.scrollToBottom();
@@ -2727,7 +2764,7 @@ class OpenClawChatView extends ItemView {
         playBtn.textContent = "⏳ loading...";
         try {
           const url = this.buildVoiceUrl(voiceRef);
-          console.log("[ObsidianClaw] Loading audio from:", url);
+          console.debug("[ObsidianClaw] Loading audio from:", url);
           audio = new Audio(url);
 
           await new Promise<void>((resolve, reject) => {
@@ -2738,11 +2775,11 @@ class OpenClawChatView extends ItemView {
           });
 
           audio.addEventListener("timeupdate", () => {
-            if (audio && audio.duration) barEl.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+            if (audio && audio.duration) barEl.setCssStyles({ width: `${(audio.currentTime / audio.duration) * 100}%` });
           });
           audio.addEventListener("ended", () => {
             playBtn.textContent = "▶ voice message";
-            barEl.style.width = "0%";
+            barEl.setCssStyles({ width: "0%" });
           });
         } catch (e) {
           console.error("[ObsidianClaw] Audio load failed:", e);
@@ -2771,7 +2808,7 @@ class OpenClawChatView extends ItemView {
       return text;
     }
     if (typeof content === "string") return content;
-    return String((msg as Record<string, unknown>).text ?? "");
+    return String(msg.text ?? "");
   }
 
   private updateStreamBubble(): void {
@@ -2883,8 +2920,8 @@ class OpenClawChatView extends ItemView {
   }
 
   private autoResize(): void {
-    this.inputEl.style.height = "auto";
-    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 150) + "px";
+    this.inputEl.setCssStyles({ height: "auto" });
+    this.inputEl.setCssStyles({ height: Math.min(this.inputEl.scrollHeight, 150) + "px" });
   }
 }
 
@@ -3158,7 +3195,8 @@ class ModelPickerModal extends Modal {
 
     // Footer
     const footer = contentEl.createDiv("openclaw-picker-hint openclaw-picker-footer");
-    footer.innerHTML = "Want more models? <a href='https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models'>Add them in your gateway config.</a>";
+    footer.appendText("Want more models? ");
+    footer.createEl("a", { text: "Add them in your gateway config.", href: "https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models" });
   }
 
   private renderModels(provider: string): void {
