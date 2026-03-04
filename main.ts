@@ -1302,7 +1302,7 @@ class OpenClawChatView extends ItemView {
     const inputRow = inputArea.createDiv("openclaw-input-row");
     // Brain button (model picker)
     const brainBtn = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
-    setIcon(brainBtn, "brain");
+    setIcon(brainBtn, "sparkles");
     brainBtn.addEventListener("click", () => this.openModelPicker());
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
