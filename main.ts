@@ -463,18 +463,19 @@ class GatewayClient {
         }
         return;
       }
-      this.opts.onEvent?.(msg);
+      if (msg.event) this.opts.onEvent?.({ event: msg.event, payload: msg.payload ?? {}, seq: msg.seq });
       return;
     }
 
     if (msg.type === "res") {
-      const p = this.pending.get(msg.id);
+      const msgId = msg.id ?? "";
+      const p = this.pending.get(msgId);
       if (!p) return;
-      this.pending.delete(msg.id);
-      const t = this.pendingTimeouts.get(msg.id);
+      this.pending.delete(msgId);
+      const t = this.pendingTimeouts.get(msgId);
       if (t) {
         clearTimeout(t);
-        this.pendingTimeouts.delete(msg.id);
+        this.pendingTimeouts.delete(msgId);
       }
       if (msg.ok) {
         p.resolve(msg.payload);
@@ -632,13 +633,14 @@ class OnboardingModal extends Modal {
       const group = el.createDiv("openclaw-onboard-field");
       const label = group.createEl("label", { text: f.label });
       if (f.required) { const req = label.createSpan({ cls: "oc-req-label" }); req.textContent = " (required)"; }
+      const fKey = f.key as keyof typeof this.setupKeys;
       const input = group.createEl("input", {
         type: "password",
-        value: this.setupKeys[f.key],
+        value: this.setupKeys[fKey],
         placeholder: f.placeholder,
         cls: "openclaw-onboard-input",
       });
-      input.addEventListener("input", () => { this.setupKeys[f.key] = input.value.trim(); });
+      input.addEventListener("input", () => { this.setupKeys[fKey] = input.value.trim(); });
       const help = group.createDiv("openclaw-onboard-hint");
       this.setRichText(help, f.help);
     }
@@ -740,25 +742,28 @@ class OnboardingModal extends Modal {
   }
 
   private generateConfig(): Record<string, unknown> {
+    const auth: Record<string, unknown> = { profiles: {} as Record<string, unknown> };
+    const agents: Record<string, unknown> = { defaults: { model: { primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6' } } };
     const config: Record<string, unknown> = {
-      auth: { profiles: {} },
-      agents: { defaults: { model: { primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6' } } },
+      auth,
+      agents,
       gateway: { port: 18789, bind: 'loopback', tailscale: { mode: 'serve' }, auth: { mode: 'token', allowTailscale: true } },
     };
-    if (this.setupKeys.claude1) config.auth.profiles['anthropic:default'] = { provider: 'anthropic', mode: 'token' };
-    if (this.setupKeys.claude2) config.auth.profiles['anthropic:secondary'] = { provider: 'anthropic', mode: 'token' };
-    if (this.setupKeys.googleai) config.auth.profiles['google:default'] = { provider: 'google', mode: 'api_key' };
+    const profiles = auth.profiles as Record<string, unknown>;
+    if (this.setupKeys.claude1) profiles['anthropic:default'] = { provider: 'anthropic', mode: 'token' };
+    if (this.setupKeys.claude2) profiles['anthropic:secondary'] = { provider: 'anthropic', mode: 'token' };
+    if (this.setupKeys.googleai) profiles['google:default'] = { provider: 'google', mode: 'api_key' };
     if (this.setupKeys.brave) config.tools = { web: { search: { apiKey: this.setupKeys.brave } } };
     if (this.setupKeys.elevenlabs) config.messages = { tts: { provider: 'elevenlabs', elevenlabs: { apiKey: this.setupKeys.elevenlabs } } };
     if (this.setupBots.length > 1) {
-      config.agents.list = this.setupBots.map((bot, i) => {
+      agents.list = this.setupBots.map((bot, i) => {
         const id = i === 0 ? 'main' : (bot.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bot-${i}`);
         const folder = 'AGENT-' + (bot.name || 'BOT').toUpperCase().replace(/[^A-Z0-9]/g, '-');
         return { id, name: bot.name || `Bot ${i + 1}`, workspace: `~/.openclaw/workspace/${folder}` };
       });
     } else if (this.setupBots[0]?.name) {
       const folder = 'AGENT-' + this.setupBots[0].name.toUpperCase().replace(/[^A-Z0-9]/g, '-');
-      config.agents.defaults.workspace = `~/.openclaw/workspace/${folder}`;
+      (agents.defaults as Record<string, unknown>).workspace = `~/.openclaw/workspace/${folder}`;
     }
     return config;
   }
@@ -1053,7 +1058,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
         // Try a simple request to verify pairing
         try {
-          const result = await this.plugin.gateway!.request("sessions.list", {});
+          const result = await this.plugin.gateway!.request("sessions.list", {}) as { sessions?: unknown[] } | null;
           if (result?.sessions) {
             this.showStatus("✓ Device is paired and authorized!", "success");
             setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
@@ -1093,7 +1098,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
         return;
       }
       try {
-        const result = await this.plugin.gateway?.request("sessions.list", {});
+        const result = await this.plugin.gateway?.request("sessions.list", {}) as { sessions?: unknown[] } | null;
         if (result?.sessions) {
           if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
           this.showStatus("✓ Device approved!", "success");
@@ -1394,7 +1399,7 @@ class OpenClawChatView extends ItemView {
     }
   }
 
-  onClose(): void {
+  async onClose(): Promise<void> {
     if (this.plugin.chatView === this) {
       this.plugin.chatView = null;
     }
@@ -1715,7 +1720,7 @@ class OpenClawChatView extends ItemView {
     this.scrollToBottom();
 
     try {
-      await this.plugin.gateway.request("chat.send", {
+      await this.plugin.gateway!.request("chat.send", {
         sessionKey: sendSessionKey,
         message: marker,
         deliver: false,
@@ -3382,7 +3387,7 @@ class ModelPickerModal extends Modal {
 
 // ─── Confirm Modal ───────────────────────────────────────────────────
 
-class ConfirmModal extends Modal {
+class _ConfirmModal extends Modal {
   private config: { title: string; message: string; confirmText: string; onConfirm: () => void };
 
   constructor(app: App, config: { title: string; message: string; confirmText: string; onConfirm: () => void }) {
@@ -3456,7 +3461,7 @@ class ConfirmCloseModal extends Modal {
 
 // ─── Text Input Modal ────────────────────────────────────────────────
 
-class TextInputModal extends Modal {
+class _TextInputModal extends Modal {
   private config: { title: string; placeholder: string; confirmText: string; initialValue?: string; onConfirm: (value: string) => void };
   private inputEl!: HTMLInputElement;
 
@@ -3503,7 +3508,7 @@ class TextInputModal extends Modal {
 
 // ─── Attachment Picker ───────────────────────────────────────────────
 
-class AttachmentModal extends FuzzySuggestModal<TFile> {
+class _AttachmentModal extends FuzzySuggestModal<TFile> {
   private files: TFile[];
   private onChoose: (file: TFile) => void;
 
@@ -3541,7 +3546,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("OpenClaw").setHeading();
+    new Setting(containerEl).setName("Chat").setHeading();
 
     // ─── Setup Wizard (top, most prominent) ───────────────────────
     const wizardSection = containerEl.createDiv("openclaw-settings-wizard");
