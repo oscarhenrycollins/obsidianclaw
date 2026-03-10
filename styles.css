@@ -121,37 +121,54 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  padding: 6px 4px 0 4px;
+  padding: 6px 8px 0 8px;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: var(--text-faint);
   transition: all 0.15s;
-  background: rgba(128,128,128,0.06);
+  background: transparent;
   min-width: 0;
   flex: 1 1 0;
   max-width: 33.33%;
   border-radius: 8px 8px 0 0;
   position: relative;
   overflow: hidden;
+  opacity: 0.55;
 }
-.openclaw-tab:hover { background: rgba(128,128,128,0.12); }
+.openclaw-tab:hover { background: rgba(128,128,128,0.12); opacity: 0.75; }
 .openclaw-tab.active {
   background: var(--background-primary);
   color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-primary);
   margin-bottom: -1px;
   padding-bottom: 1px;
+  opacity: 1;
+  font-weight: 600;
 }
 .openclaw-tab-row {
   display: flex;
   align-items: center;
   gap: 5px;
-  justify-content: center;
+  justify-content: space-between;
 }
 .openclaw-tab-label {
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.openclaw-tab-label-input {
+  font-size: 12px;
+  background: rgba(128,128,128,0.2);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  color: var(--text-normal);
+  padding: 1px 4px;
+  width: 100%;
+  outline: none;
 }
 .openclaw-tab-close {
   font-size: 13px;
@@ -164,11 +181,12 @@
   border-radius: 4px;
   transition: all 0.15s;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .openclaw-tab:hover .openclaw-tab-close,
 .openclaw-tab.active .openclaw-tab-close {
   width: auto;
-  padding: 2px 3px;
+  padding: 2px 4px;
   opacity: 0.4;
 }
 .openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.25); }
@@ -323,6 +341,17 @@
 }
 .openclaw-confirm-ok:hover {
   opacity: 0.9;
+}
+.openclaw-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.openclaw-confirm-check input[type="checkbox"] {
+  margin: 0;
 }
 
 /* Container: fill all available space */

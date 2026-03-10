@@ -1384,6 +1384,10 @@ class OpenClawChatView extends ItemView {
     // Initial state
     this.updateStatus();
     this.plugin.chatView = this;
+    
+    // Init touch gestures for mobile
+    this.initTouchGestures();
+    
     if (this.plugin.gatewayConnected) {
       await this.loadHistory();
       void this.loadAgents();
@@ -1964,10 +1968,43 @@ class OpenClawChatView extends ItemView {
       const tabCls = `openclaw-tab${isCurrent ? " active" : ""}`;
       const tabEl = this.tabBarEl.createDiv({ cls: tabCls });
 
-      // Row: label + ×
+      // Row: label + × (× pushed to far right via CSS)
       const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
-      const labelText = tab.label;
-      row.createSpan({ text: labelText, cls: "openclaw-tab-label" });
+      const labelSpan = row.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+
+      // Double-click to rename (not main)
+      if (tab.key !== "main") {
+        labelSpan.title = "Double-click to rename";
+        labelSpan.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          const input = createEl("input", { cls: "openclaw-tab-label-input" });
+          input.value = tab.label;
+          input.maxLength = 30;
+          labelSpan.replaceWith(input);
+          input.focus();
+          input.select();
+          const finish = async (save: boolean) => {
+            const newName = input.value.trim();
+            if (save && newName && newName !== tab.label) {
+              try {
+                await this.plugin.gateway?.request("sessions.patch", {
+                  key: `${this.agentPrefix}${tab.key}`,
+                  label: newName,
+                });
+                tab.label = newName;
+              } catch { /* keep old name */ }
+            }
+            input.replaceWith(labelSpan);
+            labelSpan.textContent = tab.label;
+            void this.renderTabs();
+          };
+          input.addEventListener("keydown", (ev: KeyboardEvent) => {
+            if (ev.key === "Enter") { ev.preventDefault(); void finish(true); }
+            if (ev.key === "Escape") { ev.preventDefault(); void finish(false); }
+          });
+          input.addEventListener("blur", () => void finish(true));
+        });
+      }
 
       // × button: Main = reset, everything else = close/delete
       const isResetOnly = tab.key === "main";
@@ -1976,6 +2013,11 @@ class OpenClawChatView extends ItemView {
         closeBtn.title = "Reset conversation";
         closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected) return;
+          // Confirm before reset
+          if (!this.isCloseConfirmDisabled()) {
+            const confirmed = await this.confirmTabClose("Reset main tab?", "This will clear the conversation.");
+            if (!confirmed) return;
+          }
           try {
             await this.plugin.gateway.request("chat.send", {
               sessionKey: tab.key,
@@ -1998,6 +2040,11 @@ class OpenClawChatView extends ItemView {
         closeBtn.title = "Close tab";
         closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
+          // Confirm before close
+          if (!this.isCloseConfirmDisabled()) {
+            const confirmed = await this.confirmTabClose("Close tab?", `Close "${tab.label}"? Chat history will be lost.`);
+            if (!confirmed) return;
+          }
           this.tabDeleteInProgress = true;
           try {
             const deleted = await deleteSessionWithFallback(this.plugin.gateway, `${this.agentPrefix}${tab.key}`);
@@ -2093,6 +2140,83 @@ class OpenClawChatView extends ItemView {
         new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`);
       }
     })());
+  }
+
+  // ─── Confirm close dialog ──────────────────────────────────────────
+
+  private isCloseConfirmDisabled(): boolean {
+    return localStorage.getItem("openclaw-confirm-close-disabled") === "true";
+  }
+
+  private confirmTabClose(title: string, msg: string): Promise<boolean> {
+    return new Promise(resolve => {
+      const modal = new ConfirmCloseModal(this.app, title, msg, (result, dontAsk) => {
+        if (result && dontAsk) {
+          localStorage.setItem("openclaw-confirm-close-disabled", "true");
+        }
+        resolve(result);
+      });
+      modal.open();
+    });
+  }
+
+  // ─── Touch gestures ──────────────────────────────────────────────
+
+  private initTouchGestures(): void {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let pulling = false;
+
+    this.messagesEl.addEventListener("touchstart", (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      pulling = false;
+    }, { passive: true });
+
+    this.messagesEl.addEventListener("touchmove", (e: TouchEvent) => {
+      const deltaY = e.touches[0].clientY - touchStartY;
+      if (this.messagesEl.scrollTop <= 0 && deltaY > 60) {
+        pulling = true;
+      }
+    }, { passive: true });
+
+    this.messagesEl.addEventListener("touchend", (e: TouchEvent) => {
+      const deltaX = e.changedTouches[0].clientX - touchStartX;
+      const deltaY = e.changedTouches[0].clientY - touchStartY;
+
+      // Pull-to-refresh
+      if (pulling) {
+        pulling = false;
+        this.messages = [];
+        this.messagesEl.empty();
+        void this.loadHistory().then(() => this.updateContextMeter());
+        new Notice("Refreshed");
+        return;
+      }
+
+      // Swipe between tabs
+      if (Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+        const currentIdx = this.tabSessions.findIndex(t => t.key === this.activeSessionKey);
+        if (currentIdx < 0) return;
+        const nextIdx = deltaX < 0 ? currentIdx + 1 : currentIdx - 1;
+        if (nextIdx >= 0 && nextIdx < this.tabSessions.length) {
+          const tab = this.tabSessions[nextIdx];
+          this.streamEl = null;
+          this.typingEl.addClass("oc-hidden");
+          this.abortBtn.addClass("oc-hidden");
+          this.hideBanner();
+          this.plugin.settings.sessionKey = tab.key;
+          void this.plugin.saveSettings();
+          this.messages = [];
+          this.messagesEl.empty();
+          this.cachedSessionDisplayName = tab.label;
+          void this.loadHistory();
+          void this.updateContextMeter();
+          void this.renderTabs();
+          this.updateStatus();
+        }
+      }
+    }, { passive: true });
   }
 
   private contextColor(pct: number): string {
@@ -3286,6 +3410,50 @@ class ConfirmModal extends Modal {
   }
 }
 
+// ─── Confirm Close Modal (with "don't ask again") ───────────────────
+
+class ConfirmCloseModal extends Modal {
+  private title: string;
+  private message: string;
+  private callback: (result: boolean, dontAsk: boolean) => void;
+  private checkboxEl!: HTMLInputElement;
+
+  constructor(app: App, title: string, message: string, callback: (result: boolean, dontAsk: boolean) => void) {
+    super(app);
+    this.title = title;
+    this.message = message;
+    this.callback = callback;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.addClass("openclaw-confirm-modal");
+    contentEl.createEl("h3", { text: this.title, cls: "openclaw-confirm-title" });
+    contentEl.createEl("p", { text: this.message, cls: "openclaw-confirm-message" });
+    
+    const checkRow = contentEl.createDiv("openclaw-confirm-check");
+    this.checkboxEl = checkRow.createEl("input", { type: "checkbox" });
+    this.checkboxEl.id = "confirm-dont-ask";
+    checkRow.createEl("label", { text: "Don't ask me again", attr: { for: "confirm-dont-ask" } });
+
+    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel", cls: "openclaw-confirm-cancel" });
+    cancelBtn.addEventListener("click", () => {
+      this.callback(false, false);
+      this.close();
+    });
+    const confirmBtn = btnRow.createEl("button", { text: this.title.startsWith("Reset") ? "Reset" : "Close", cls: "openclaw-confirm-ok" });
+    confirmBtn.addEventListener("click", () => {
+      this.callback(true, this.checkboxEl.checked);
+      this.close();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 // ─── Text Input Modal ────────────────────────────────────────────────
 
 class TextInputModal extends Modal {
@@ -3424,6 +3592,18 @@ class OpenClawSettingTab extends PluginSettingTab {
             this.display(); // refresh the settings UI
             await this.plugin.connectGateway();
             new Notice("Reset to main conversation");
+          })
+      );
+
+    // ─── Behavior ─────────────────────────────────────────────────
+    new Setting(containerEl)
+      .setName("Confirm before closing tabs")
+      .setDesc("Show a confirmation dialog before closing or resetting tabs")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(localStorage.getItem("openclaw-confirm-close-disabled") !== "true")
+          .onChange((value) => {
+            localStorage.setItem("openclaw-confirm-close-disabled", value ? "false" : "true");
           })
       );
 
