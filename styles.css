@@ -225,17 +225,17 @@
   margin-right: 0;
 }
 
-/* Home tab: icon-only, visually distinct */
+/* Home tab: icon-only, ~40% width of a regular tab */
 .openclaw-tab-home {
-  flex: 0 0 auto !important;
-  max-width: none !important;
-  padding: 6px 14px 0 14px;
-  opacity: 0.45;
-  min-width: 48px !important;
+  flex: 0.4 0 0 !important;
+  max-width: 15% !important;
+  min-width: 70px !important;
+  padding: 6px 8px 0 8px;
+  opacity: 0.5;
 }
-.openclaw-tab-home.active { opacity: 0.85; }
+.openclaw-tab-home.active { opacity: 0.9; }
 .openclaw-tab-home .openclaw-tab-label {
-  font-size: 11px;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -245,11 +245,19 @@
   width: auto;
   padding: 2px 4px;
   opacity: 0;
-  margin-left: auto;
+  flex-shrink: 0;
 }
 .openclaw-tab-home:hover .openclaw-tab-close,
 .openclaw-tab-home.active .openclaw-tab-close {
   opacity: 0.4;
+}
+
+/* Drag reorder */
+.openclaw-tab.oc-dragging {
+  opacity: 0.4 !important;
+}
+.openclaw-tab.oc-drag-over {
+  border-left: 2px solid var(--interactive-accent);
 }
 
 /* Sub-agent tabs */

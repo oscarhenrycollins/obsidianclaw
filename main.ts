@@ -42,6 +42,8 @@ interface OpenClawSettings {
   devicePrivateKey?: string;
   /** Persisted stream items (tool calls + intermediary text) keyed by assistant message index */
   streamItemsMap?: Record<string, StreamItem[]>;
+  /** Saved tab order (non-Home tab keys) */
+  tabOrder?: string[];
 }
 
 const DEFAULT_SETTINGS: OpenClawSettings = {
@@ -1957,10 +1959,24 @@ class OpenClawChatView extends ItemView {
       this.tabSessions.push({ key: "main", label: "Home", pct: 0 });
     }
 
-    // Add other sessions in creation order (oldest first)
+    // Add other sessions in creation order (oldest first), then apply saved order
     const others = convSessions
       .filter(s => s.key.slice(agentPrefix.length) !== "main")
       .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0));
+
+    const savedOrder = this.plugin.settings.tabOrder || [];
+    if (savedOrder.length > 0) {
+      const orderMap = new Map(savedOrder.map((k: string, i: number) => [k, i]));
+      others.sort((a, b) => {
+        const skA = a.key.slice(agentPrefix.length);
+        const skB = b.key.slice(agentPrefix.length);
+        const oA = orderMap.has(skA) ? orderMap.get(skA)! : 9999;
+        const oB = orderMap.has(skB) ? orderMap.get(skB)! : 9999;
+        if (oA !== oB) return oA - oB;
+        return (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0);
+      });
+    }
+
     for (const s of others) {
       const sk = s.key.slice(agentPrefix.length);
       const used = s.totalTokens || 0;
@@ -2114,6 +2130,34 @@ class OpenClawChatView extends ItemView {
       const meter = tabEl.createDiv({ cls: "openclaw-tab-meter" });
       const fill = meter.createDiv({ cls: "openclaw-tab-meter-fill" });
       fill.setCssStyles({ width: tab.pct + "%" });
+
+      // Drag to reorder (non-Home tabs only)
+      if (!isHome) {
+        tabEl.draggable = true;
+        tabEl.addEventListener("dragstart", (e: DragEvent) => {
+          e.dataTransfer?.setData("text/plain", tab.key);
+          tabEl.addClass("oc-dragging");
+        });
+        tabEl.addEventListener("dragend", () => {
+          tabEl.removeClass("oc-dragging");
+          this.tabBarEl.querySelectorAll(".oc-drag-over").forEach((el: Element) => (el as HTMLElement).classList.remove("oc-drag-over"));
+        });
+        tabEl.addEventListener("dragover", (e: DragEvent) => {
+          e.preventDefault();
+          tabEl.addClass("oc-drag-over");
+        });
+        tabEl.addEventListener("dragleave", () => {
+          tabEl.removeClass("oc-drag-over");
+        });
+        tabEl.addEventListener("drop", (e: DragEvent) => {
+          e.preventDefault();
+          tabEl.removeClass("oc-drag-over");
+          const draggedKey = e.dataTransfer?.getData("text/plain");
+          if (draggedKey && draggedKey !== tab.key) {
+            void this.reorderTabs(draggedKey, tab.key);
+          }
+        });
+      }
 
       // Click to switch
       if (!isCurrent) {
@@ -2287,6 +2331,18 @@ class OpenClawChatView extends ItemView {
     } catch (e) {
       new Notice(`Reset failed: ${e}`);
     }
+  }
+
+  async reorderTabs(draggedKey: string, targetKey: string): Promise<void> {
+    const keys = this.tabSessions.filter(t => t.key !== "main").map(t => t.key);
+    const fromIdx = keys.indexOf(draggedKey);
+    const toIdx = keys.indexOf(targetKey);
+    if (fromIdx === -1 || toIdx === -1) return;
+    keys.splice(fromIdx, 1);
+    keys.splice(toIdx, 0, draggedKey);
+    this.plugin.settings.tabOrder = keys;
+    await this.plugin.saveSettings();
+    await this.renderTabs();
   }
 
   openModelPicker(): void {
