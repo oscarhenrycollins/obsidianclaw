@@ -242,6 +242,14 @@
 }
 .openclaw-tab-home .openclaw-tab-close {
   font-size: 11px;
+  width: auto;
+  padding: 2px 4px;
+  opacity: 0;
+  margin-left: auto;
+}
+.openclaw-tab-home:hover .openclaw-tab-close,
+.openclaw-tab-home.active .openclaw-tab-close {
+  opacity: 0.4;
 }
 
 /* Sub-agent tabs */
