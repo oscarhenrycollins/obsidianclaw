@@ -1983,7 +1983,7 @@ class OpenClawChatView extends ItemView {
 
       if (isHome) {
         // Home tab: house icon only, non-renameable
-        labelSpan.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;opacity:0.8"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
+        labelSpan.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
       } else {
         labelSpan.textContent = tab.label;
         // Double-click to rename (non-Home tabs only)
