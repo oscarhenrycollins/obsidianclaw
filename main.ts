@@ -1171,6 +1171,14 @@ class OpenClawChatView extends ItemView {
   plugin: OpenClawPlugin;
   private messagesEl!: HTMLElement;
   private tabBarEl!: HTMLElement;
+  private hamburgerBarEl!: HTMLElement;
+  private hamburgerDropdownEl2!: HTMLElement;
+  private tabSwitcherLabelEl!: HTMLElement;
+  private tabSwitcherMeterFillEl!: HTMLElement;
+  private tabSwitcherActionsEl!: HTMLElement;
+  private tabArrowLeftEl!: HTMLElement;
+  private tabArrowRightEl!: HTMLElement;
+  private isMobileMode = false;
   private tabSessions: { key: string; label: string; pct: number }[] = [];
   private renderingTabs = false;
   private tabDeleteInProgress = false;
@@ -1264,6 +1272,61 @@ class OpenClawChatView extends ItemView {
     // Tab bar (browser-like tabs)
     this.tabBarEl = topBar.createDiv("openclaw-tab-bar");
     this.tabBarEl.addEventListener("wheel", (e) => { e.preventDefault(); this.tabBarEl.scrollLeft += e.deltaY; }, { passive: false });
+
+    // Hamburger bar (mobile mode — hidden by default)
+    this.hamburgerBarEl = topBar.createDiv("oc-hamburger-bar");
+
+    // Hamburger button
+    const hamburgerBtn = this.hamburgerBarEl.createEl("button", { cls: "oc-hamburger-btn" });
+    hamburgerBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+
+    // Tab switcher
+    const tabSwitcher = this.hamburgerBarEl.createDiv("oc-tab-switcher");
+    this.tabArrowLeftEl = tabSwitcher.createEl("button", { cls: "oc-tab-switcher-arrow oc-arrow-left" });
+    this.tabArrowLeftEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+    const switcherCurrent = tabSwitcher.createDiv("oc-tab-switcher-current");
+    const switcherRow = switcherCurrent.createDiv("oc-tab-switcher-row");
+    this.tabSwitcherLabelEl = switcherRow.createSpan("oc-tab-switcher-label");
+    this.tabSwitcherLabelEl.textContent = "Home";
+    this.tabSwitcherActionsEl = switcherRow.createSpan("oc-tab-switcher-actions");
+    const switcherMeter = switcherCurrent.createDiv("oc-tab-switcher-meter");
+    this.tabSwitcherMeterFillEl = switcherMeter.createDiv("oc-tab-switcher-meter-fill");
+    this.tabArrowRightEl = tabSwitcher.createEl("button", { cls: "oc-tab-switcher-arrow oc-arrow-right" });
+    this.tabArrowRightEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+    // Hamburger dropdown
+    this.hamburgerDropdownEl2 = this.hamburgerBarEl.createDiv("oc-hamburger-dropdown");
+
+    // Arrow click handlers
+    this.tabArrowLeftEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const currentKey = this.plugin.settings.sessionKey || "main";
+      const idx = this.tabSessions.findIndex(t => t.key === currentKey);
+      if (idx > 0) this.switchToTab(this.tabSessions[idx - 1]);
+    });
+    this.tabArrowRightEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const currentKey = this.plugin.settings.sessionKey || "main";
+      const idx = this.tabSessions.findIndex(t => t.key === currentKey);
+      if (idx < this.tabSessions.length - 1) this.switchToTab(this.tabSessions[idx + 1]);
+    });
+
+    // Hamburger button toggles dropdown
+    hamburgerBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.renderHamburgerDropdown();
+      this.hamburgerDropdownEl2.toggleClass("oc-open", !this.hamburgerDropdownEl2.hasClass("oc-open"));
+    });
+    document.addEventListener("click", (e) => {
+      if (!this.hamburgerDropdownEl2.contains(e.target as Node) && e.target !== hamburgerBtn && !hamburgerBtn.contains(e.target as Node)) {
+        this.hamburgerDropdownEl2.removeClass("oc-open");
+      }
+    });
+
+    // Watch for resize to toggle mobile mode
+    const resizeObserver = new ResizeObserver(() => this.updateTabMode());
+    resizeObserver.observe(container);
+    this.register(() => resizeObserver.disconnect());
 
     // Agent switcher button (right side of top bar)
     this.profileBtnEl = topBar.createDiv("openclaw-agent-btn");
@@ -1960,6 +2023,322 @@ class OpenClawChatView extends ItemView {
     this.modelLabelEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
   }
 
+  private updateTabMode(): void {
+    if (!this.tabBarEl || !this.hamburgerBarEl) return;
+    const containerWidth = this.containerEl.children[1]?.clientWidth || 400;
+    const tabCount = this.tabSessions.length + 1; // +1 for add button
+    const perTab = containerWidth / tabCount;
+    const shouldBeMobile = containerWidth < 400 || perTab < 60;
+    if (shouldBeMobile !== this.isMobileMode) {
+      this.isMobileMode = shouldBeMobile;
+      if (shouldBeMobile) {
+        this.tabBarEl.addClass("oc-hamburger-mode");
+        this.hamburgerBarEl.addClass("oc-visible");
+      } else {
+        this.tabBarEl.removeClass("oc-hamburger-mode");
+        this.hamburgerBarEl.removeClass("oc-visible");
+        this.hamburgerDropdownEl2.removeClass("oc-open");
+      }
+    }
+    if (shouldBeMobile) this.renderMobileTabSwitcher();
+  }
+
+  private renderMobileTabSwitcher(): void {
+    const currentKey = this.plugin.settings.sessionKey || "main";
+    const currentIdx = this.tabSessions.findIndex(t => t.key === currentKey);
+    const current = currentIdx >= 0 ? this.tabSessions[currentIdx] : this.tabSessions[0];
+    const idx = currentIdx >= 0 ? currentIdx : 0;
+    const isHome = current.key === "main";
+
+    // Label
+    if (isHome) {
+      this.tabSwitcherLabelEl.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg> Home';
+      this.tabSwitcherLabelEl.title = "";
+      this.tabSwitcherLabelEl.style.cursor = "";
+      this.tabSwitcherLabelEl.ondblclick = null;
+    } else {
+      this.tabSwitcherLabelEl.textContent = current.label;
+      this.tabSwitcherLabelEl.title = "Double-click to rename";
+      this.tabSwitcherLabelEl.style.cursor = "default";
+      this.tabSwitcherLabelEl.ondblclick = (e: MouseEvent) => {
+        e.stopPropagation();
+        this.startSwitcherRename(current);
+      };
+    }
+
+    // Meter
+    this.tabSwitcherMeterFillEl.style.width = (current.pct || 0) + "%";
+
+    // Arrows (invisible spacers when at boundaries)
+    this.tabArrowLeftEl.style.visibility = idx <= 0 ? "hidden" : "visible";
+    this.tabArrowLeftEl.style.pointerEvents = idx <= 0 ? "none" : "auto";
+    this.tabArrowRightEl.style.visibility = idx >= this.tabSessions.length - 1 ? "hidden" : "visible";
+    this.tabArrowRightEl.style.pointerEvents = idx >= this.tabSessions.length - 1 ? "none" : "auto";
+
+    // Actions
+    this.tabSwitcherActionsEl.empty();
+
+    // Reset button
+    const resetBtn = this.tabSwitcherActionsEl.createEl("button", { cls: "oc-tab-switcher-action" });
+    resetBtn.title = "Reset conversation";
+    resetBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+    resetBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void this.resetTabAction(current);
+    });
+
+    // Close button (real for non-home, invisible spacer for home)
+    const closeBtn = this.tabSwitcherActionsEl.createEl("button", { cls: "oc-tab-switcher-action" });
+    closeBtn.textContent = "×";
+    closeBtn.style.fontSize = "16px";
+    if (!isHome) {
+      closeBtn.title = "Close tab";
+      closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.closeTabAction(current);
+      });
+    } else {
+      closeBtn.style.visibility = "hidden";
+      closeBtn.style.pointerEvents = "none";
+    }
+  }
+
+  private startSwitcherRename(tab: { key: string; label: string; pct: number }): void {
+    const input = createEl("input");
+    input.type = "text";
+    input.value = tab.label;
+    input.maxLength = 30;
+    input.className = "oc-switcher-rename-input";
+    this.tabSwitcherLabelEl.textContent = "";
+    this.tabSwitcherLabelEl.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = async (save: boolean) => {
+      const newName = input.value.trim();
+      if (save && newName && newName !== tab.label) {
+        try {
+          await this.plugin.gateway?.request("sessions.patch", {
+            key: `${this.agentPrefix}${tab.key}`,
+            label: newName,
+          });
+          tab.label = newName;
+        } catch { /* keep old name */ }
+      }
+      void this.renderTabs();
+      this.renderMobileTabSwitcher();
+    };
+    input.addEventListener("keydown", (ev: KeyboardEvent) => {
+      if (ev.key === "Enter") { ev.preventDefault(); void finish(true); }
+      if (ev.key === "Escape") { ev.preventDefault(); void finish(false); }
+      ev.stopPropagation();
+    });
+    input.addEventListener("blur", () => void finish(true));
+    input.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  private renderHamburgerDropdown(): void {
+    this.hamburgerDropdownEl2.empty();
+    const currentKey = this.plugin.settings.sessionKey || "main";
+
+    for (const tab of this.tabSessions) {
+      const isHome = tab.key === "main";
+      const isCurrent = tab.key === currentKey;
+      const item = this.hamburgerDropdownEl2.createDiv({ cls: `oc-hamburger-dropdown-item${isCurrent ? " oc-active" : ""}` });
+
+      // Label
+      const label = item.createSpan({ cls: "oc-dd-label" });
+      if (isHome) {
+        label.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg> Home';
+      } else {
+        label.textContent = tab.label;
+        label.title = "Double-click to rename";
+        label.addEventListener("dblclick", (e) => {
+          e.stopPropagation();
+          this.startDropdownRename(label, tab);
+        });
+      }
+
+      // Context meter
+      const meter = item.createDiv({ cls: "oc-dd-meter" });
+      const fill = meter.createDiv({ cls: "oc-dd-meter-fill" });
+      fill.style.width = tab.pct + "%";
+
+      // Actions
+      const actions = item.createSpan({ cls: "oc-dd-actions" });
+
+      // Reset
+      const resetBtn = actions.createSpan({ cls: "oc-dd-action-btn" });
+      resetBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+      resetBtn.title = "Reset conversation";
+      resetBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.hamburgerDropdownEl2.removeClass("oc-open");
+        void this.resetTabAction(tab);
+      });
+
+      // Close (real or spacer)
+      if (!isHome) {
+        const closeBtn = actions.createSpan({ text: "×", cls: "oc-dd-action-btn oc-dd-action-close" });
+        closeBtn.title = "Close tab";
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.hamburgerDropdownEl2.removeClass("oc-open");
+          void this.closeTabAction(tab);
+        });
+      } else {
+        const spacer = actions.createSpan({ text: "×", cls: "oc-dd-action-btn" });
+        spacer.style.visibility = "hidden";
+      }
+
+      // Click to switch
+      item.addEventListener("click", () => {
+        this.hamburgerDropdownEl2.removeClass("oc-open");
+        if (!isCurrent) this.switchToTab(tab);
+      });
+    }
+
+    // + New Tab
+    const addItem = this.hamburgerDropdownEl2.createDiv({ cls: "oc-hamburger-dropdown-item" });
+    addItem.style.justifyContent = "center";
+    addItem.style.color = "var(--text-muted)";
+    addItem.style.opacity = "0.7";
+    addItem.createSpan({ text: "+ New Tab" });
+    addItem.addEventListener("click", () => {
+      this.hamburgerDropdownEl2.removeClass("oc-open");
+      void this.createNewTabAction();
+    });
+  }
+
+  private startDropdownRename(labelEl: HTMLElement, tab: { key: string; label: string; pct: number }): void {
+    const input = createEl("input", { cls: "oc-dd-rename-input" });
+    input.value = tab.label;
+    input.maxLength = 30;
+    labelEl.textContent = "";
+    labelEl.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = async (save: boolean) => {
+      const newName = input.value.trim();
+      if (save && newName && newName !== tab.label) {
+        try {
+          await this.plugin.gateway?.request("sessions.patch", {
+            key: `${this.agentPrefix}${tab.key}`,
+            label: newName,
+          });
+          tab.label = newName;
+        } catch { /* keep old name */ }
+      }
+      labelEl.textContent = tab.label;
+      void this.renderTabs();
+      this.renderMobileTabSwitcher();
+    };
+    input.addEventListener("keydown", (ev: KeyboardEvent) => {
+      if (ev.key === "Enter") { ev.preventDefault(); void finish(true); }
+      if (ev.key === "Escape") { ev.preventDefault(); void finish(false); }
+      ev.stopPropagation();
+    });
+    input.addEventListener("blur", () => void finish(true));
+    input.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  private switchToTab(tab: { key: string; label: string; pct: number }): void {
+    void (async () => {
+      this.streamEl = null;
+      this.typingEl.addClass("oc-hidden");
+      this.abortBtn.addClass("oc-hidden");
+      this.hideBanner();
+      this.plugin.settings.sessionKey = tab.key;
+      await this.plugin.saveSettings();
+      this.messages = [];
+      this.messagesEl.empty();
+      this.cachedSessionDisplayName = tab.label;
+      await this.loadHistory();
+      this.restoreStreamUI();
+      await this.updateContextMeter();
+      void this.renderTabs();
+      this.updateStatus();
+    })();
+  }
+
+  private async resetTabAction(tab: { key: string; label: string; pct: number }): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    const currentKey = this.plugin.settings.sessionKey || "main";
+    const isHome = tab.key === "main";
+    const title = isHome ? "Reset Home tab?" : `Reset "${tab.label}"?`;
+    if (!this.isCloseConfirmDisabled()) {
+      const confirmed = await this.confirmTabClose(title, "This will clear the conversation.");
+      if (!confirmed) return;
+    }
+    try {
+      await this.plugin.gateway.request("chat.send", {
+        sessionKey: tab.key,
+        message: "/reset",
+        deliver: false,
+        idempotencyKey: "reset-" + Date.now(),
+      });
+      new Notice(isHome ? "Home tab reset" : `Reset: ${tab.label}`);
+      if (tab.key === currentKey) {
+        this.messages = [];
+        this.messagesEl.empty();
+      }
+      await this.updateContextMeter();
+      await this.renderTabs();
+    } catch (err: unknown) {
+      new Notice(`Reset failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async closeTabAction(tab: { key: string; label: string; pct: number }): Promise<void> {
+    if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
+    const currentKey = this.plugin.settings.sessionKey || "main";
+    if (!this.isCloseConfirmDisabled()) {
+      const confirmed = await this.confirmTabClose("Close tab?", `Close "${tab.label}"? Chat history will be lost.`);
+      if (!confirmed) return;
+    }
+    this.tabDeleteInProgress = true;
+    try {
+      const deleted = await deleteSessionWithFallback(this.plugin.gateway, `${this.agentPrefix}${tab.key}`);
+      new Notice(deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`);
+    } catch (err: unknown) {
+      new Notice(`Close failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.finishStream(tab.key);
+    if (tab.key === currentKey) {
+      this.plugin.settings.sessionKey = "main";
+      await this.plugin.saveSettings();
+      this.messages = [];
+      this.messagesEl.empty();
+      await this.loadHistory();
+      this.restoreStreamUI();
+    }
+    this.tabDeleteInProgress = false;
+    await this.renderTabs();
+    await this.updateContextMeter();
+  }
+
+  private async createNewTabAction(): Promise<void> {
+    const existingKeys = new Set(this.tabSessions.map(t => t.key));
+    let nextNum = 1;
+    while (existingKeys.has(`tab-${nextNum}`)) nextNum++;
+    const sessionKey = `tab-${nextNum}`;
+    try {
+      await this.plugin.gateway?.request("chat.send", {
+        sessionKey: sessionKey,
+        message: "/new",
+        deliver: false,
+        idempotencyKey: "newtab-" + Date.now(),
+      });
+      this.plugin.settings.sessionKey = sessionKey;
+      await this.plugin.saveSettings();
+      this.messages = [];
+      this.messagesEl.empty();
+      await this.renderTabs();
+      new Notice("New tab created");
+    } catch (err: unknown) {
+      new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   async renderTabs(): Promise<void> {
     if (!this.tabBarEl || this.renderingTabs) return;
     this.renderingTabs = true;
@@ -2267,6 +2646,9 @@ class OpenClawChatView extends ItemView {
         new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`);
       }
     })());
+
+    // Check if mobile mode needed
+    this.updateTabMode();
   }
 
   // ─── Confirm close dialog ──────────────────────────────────────────

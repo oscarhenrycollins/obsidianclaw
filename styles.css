@@ -277,6 +277,239 @@
   background: rgba(128, 128, 128, 0.3);
 }
 
+/* ─── Mobile Hamburger Tab Switcher ──────────────────────────── */
+.openclaw-tab-bar.oc-hamburger-mode { display: none; }
+
+.oc-hamburger-bar {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  align-items: stretch;
+  gap: 0;
+  min-height: 36px;
+  position: relative;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.oc-hamburger-bar.oc-visible { display: flex; }
+
+.oc-hamburger-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 10px;
+  border-radius: 0;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--background-modifier-border);
+  min-width: 40px;
+  min-height: 36px;
+}
+.oc-hamburger-btn:hover { background: rgba(128,128,128,0.1); }
+.oc-hamburger-btn:active { background: rgba(128,128,128,0.18); }
+
+/* Tab Switcher */
+.oc-tab-switcher {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 2px;
+}
+.oc-tab-switcher-arrow {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+  min-width: 30px;
+  min-height: 30px;
+}
+.oc-tab-switcher-arrow:hover { background: rgba(128,128,128,0.12); opacity: 0.9; }
+.oc-tab-switcher-arrow:active { background: rgba(128,128,128,0.2); opacity: 1; }
+
+.oc-tab-switcher-current {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 4px 3px 4px;
+}
+.oc-tab-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.oc-tab-switcher-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-tab-switcher-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.oc-tab-switcher-action {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  font-size: 13px;
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+  min-width: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.oc-tab-switcher-action:hover { opacity: 0.9; background: rgba(128,128,128,0.12); }
+.oc-tab-switcher-action:active { opacity: 1; background: rgba(128,128,128,0.2); }
+
+.oc-tab-switcher-meter {
+  width: 100%;
+  height: 3px;
+  background: rgba(128,128,128,0.15);
+  border-radius: 1.5px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+.oc-tab-switcher-meter-fill {
+  height: 100%;
+  border-radius: 1.5px;
+  background: var(--text-normal);
+  opacity: 0.6;
+  transition: width 0.5s ease;
+  width: 0%;
+}
+
+.oc-switcher-rename-input {
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(128,128,128,0.2);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 4px;
+  color: var(--text-normal);
+  padding: 1px 5px;
+  width: 100%;
+  outline: none;
+}
+
+/* Hamburger Dropdown */
+.oc-hamburger-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-top: none;
+  z-index: 100;
+  max-height: 60vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.oc-hamburger-dropdown.oc-open { display: block; }
+
+.oc-hamburger-dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  border-bottom: 1px solid rgba(128,128,128,0.06);
+  transition: background 0.12s;
+}
+.oc-hamburger-dropdown-item:last-child { border-bottom: none; }
+.oc-hamburger-dropdown-item:hover { background: rgba(128,128,128,0.1); }
+.oc-hamburger-dropdown-item:active { background: rgba(128,128,128,0.15); }
+.oc-hamburger-dropdown-item.oc-active {
+  color: var(--text-normal);
+  font-weight: 600;
+  background: rgba(128,128,128,0.08);
+}
+.oc-dd-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oc-dd-meter {
+  width: 36px;
+  height: 3px;
+  background: rgba(128,128,128,0.15);
+  border-radius: 1.5px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.oc-dd-meter-fill {
+  height: 100%;
+  border-radius: 1.5px;
+  background: var(--text-normal);
+  opacity: 0.6;
+}
+.oc-dd-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.oc-dd-action-btn {
+  cursor: pointer;
+  opacity: 0.4;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: opacity 0.15s, background 0.15s;
+  line-height: 1;
+}
+.oc-dd-action-btn:hover { opacity: 1; background: rgba(128,128,128,0.15); }
+.oc-dd-action-close { color: var(--text-muted); }
+.oc-dd-rename-input {
+  font-size: 13px;
+  background: rgba(128,128,128,0.2);
+  border: 1px solid var(--interactive-accent);
+  border-radius: 3px;
+  color: var(--text-normal);
+  padding: 1px 4px;
+  width: 100%;
+  outline: none;
+}
+
+/* Hide desktop tab bar border when hamburger is active */
+.openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) {
+  border-bottom: none;
+}
+.openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) > .openclaw-tab-bar {
+  display: none;
+}
+
 /* Sub-agent view banner */
 .openclaw-subagent-banner {
   text-align: center;
