@@ -225,13 +225,13 @@
   margin-right: 0;
 }
 
-/* Home tab: icon-only, compact, visually distinct */
+/* Home tab: icon-only, visually distinct */
 .openclaw-tab-home {
   flex: 0 0 auto !important;
   max-width: none !important;
-  padding: 6px 6px 0 6px;
+  padding: 6px 14px 0 14px;
   opacity: 0.45;
-  min-width: 28px !important;
+  min-width: 48px !important;
 }
 .openclaw-tab-home.active { opacity: 0.85; }
 .openclaw-tab-home .openclaw-tab-label {
