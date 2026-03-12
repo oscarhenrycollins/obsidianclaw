@@ -1952,25 +1952,23 @@ class OpenClawChatView extends ItemView {
     if (mainSession) {
       const used = mainSession.totalTokens || 0;
       const max = mainSession.contextTokens || 200000;
-      const mainLabel = mainSession.label || mainSession.displayName || "Main";
+      const mainLabel = mainSession.label || mainSession.displayName || "Untitled";
       this.tabSessions.push({ key: "main", label: mainLabel, pct: Math.min(100, Math.round((used / max) * 100)) });
     } else {
-      this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
+      this.tabSessions.push({ key: "main", label: "Untitled", pct: 0 });
     }
 
     // Add other sessions in creation order (oldest first)
     const others = convSessions
       .filter(s => s.key.slice(agentPrefix.length) !== "main")
       .sort((a, b) => (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0));
-    let num = 1;
     for (const s of others) {
       const sk = s.key.slice(agentPrefix.length);
       const used = s.totalTokens || 0;
       const max = s.contextTokens || 200000;
       const pct = Math.min(100, Math.round((used / max) * 100));
-      const label = s.label || s.displayName || String(num);
+      const label = s.label || s.displayName || "Untitled";
       this.tabSessions.push({ key: sk, label, pct });
-      num++;
     }
 
     // Render each tab
@@ -2036,7 +2034,14 @@ class OpenClawChatView extends ItemView {
               deliver: false,
               idempotencyKey: "reset-" + Date.now(),
             });
-            new Notice(`Reset: ${tab.label}`);
+            // Rename back to default "Untitled"
+            try {
+              await this.plugin.gateway.request("sessions.patch", {
+                key: `${this.agentPrefix}${tab.key}`,
+                label: "Untitled",
+              });
+            } catch { /* best effort */ }
+            new Notice("Reset: Untitled");
             if (tab.key === currentKey) {
               this.messages = [];
               this.messagesEl.empty();
@@ -2115,9 +2120,10 @@ class OpenClawChatView extends ItemView {
     const addBtn = this.tabBarEl.createDiv({ cls: "openclaw-tab openclaw-tab-add" });
     addBtn.createSpan({ text: "+", cls: "openclaw-tab-label" });
     addBtn.addEventListener("click", () => void (async () => {
-      // Auto-name: find next number
-      const nums = this.tabSessions.map(t => parseInt(t.label)).filter(n => !isNaN(n));
-      const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+      // Find next available session key (collision-free, based on keys not labels)
+      const existingKeys = new Set(this.tabSessions.map(t => t.key));
+      let nextNum = 1;
+      while (existingKeys.has(`tab-${nextNum}`)) nextNum++;
       const sessionKey = `tab-${nextNum}`;
       try {
         await this.plugin.gateway?.request("chat.send", {
@@ -2130,7 +2136,7 @@ class OpenClawChatView extends ItemView {
         try {
           await this.plugin.gateway?.request("sessions.patch", {
             key: `${this.agentPrefix}${sessionKey}`,
-            label: String(nextNum),
+            label: "Untitled",
           });
         } catch { /* label optional */ }
         // Switch to it - clear old tab's stream UI
@@ -2146,7 +2152,7 @@ class OpenClawChatView extends ItemView {
         this.messagesEl.empty();
         await this.renderTabs();
         await this.updateContextMeter();
-        new Notice(`New tab: ${nextNum}`);
+        new Notice("New tab");
       } catch (err: unknown) {
         new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -2240,12 +2246,22 @@ class OpenClawChatView extends ItemView {
   async resetCurrentTab(): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
+      const sk = this.plugin.settings.sessionKey || "main";
       await this.plugin.gateway.request("chat.send", {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: sk,
         message: "/reset",
         deliver: false,
         idempotencyKey: "reset-" + Date.now(),
       });
+      // If resetting the main tab, rename it back to "Untitled"
+      if (sk === "main") {
+        try {
+          await this.plugin.gateway.request("sessions.patch", {
+            key: `${this.agentPrefix}main`,
+            label: "Untitled",
+          });
+        } catch { /* best effort */ }
+      }
       this.messages = [];
       if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
       await this.plugin.saveSettings();
