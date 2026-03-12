@@ -2703,27 +2703,9 @@ class OpenClawChatView extends ItemView {
         return;
       }
 
-      // Swipe between tabs
-      if (Math.abs(deltaX) > 80 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-        const currentIdx = this.tabSessions.findIndex(t => t.key === this.activeSessionKey);
-        if (currentIdx < 0) return;
-        const nextIdx = deltaX < 0 ? currentIdx + 1 : currentIdx - 1;
-        if (nextIdx >= 0 && nextIdx < this.tabSessions.length) {
-          const tab = this.tabSessions[nextIdx];
-          this.streamEl = null;
-          this.typingEl.addClass("oc-hidden");
-          this.abortBtn.addClass("oc-hidden");
-          this.hideBanner();
-          this.plugin.settings.sessionKey = tab.key;
-          void this.plugin.saveSettings();
-          this.messages = [];
-          this.messagesEl.empty();
-          this.cachedSessionDisplayName = tab.label;
-          void this.loadHistory();
-          void this.updateContextMeter();
-          void this.renderTabs();
-          this.updateStatus();
-        }
+      // Swipe between tabs removed — conflicts with Obsidian's native panel swiping.
+      // Users can use hamburger menu or arrow buttons to switch tabs.
+      if (false) {
       }
     }, { passive: true });
   }
