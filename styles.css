@@ -1560,3 +1560,100 @@
   border-color: var(--interactive-accent);
   outline: none;
 }
+/* ─── Pairing Banner ───────────────────────────────────────────────── */
+
+.openclaw-pairing-banner {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 12px 0;
+  color: var(--text-normal);
+}
+
+.openclaw-pairing-title {
+  font-weight: 600;
+  color: var(--interactive-accent);
+  margin: 0 0 6px 0;
+  font-size: 0.95em;
+}
+
+.openclaw-pairing-desc {
+  margin: 0 0 8px 0;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.openclaw-pairing-option-label {
+  font-size: 0.8em;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 8px 0 4px 0;
+}
+
+.openclaw-pairing-copy-box {
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--font-monospace);
+  font-size: 0.82em;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  transition: background 0.15s;
+}
+
+.openclaw-pairing-copy-box:hover {
+  background: var(--background-modifier-hover);
+}
+
+.openclaw-pairing-copy-box code {
+  color: var(--text-normal);
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  user-select: all;
+}
+
+.openclaw-pairing-copy-btn {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.openclaw-pairing-alt {
+  font-size: 0.82em;
+  margin-top: 6px;
+}
+
+.openclaw-pairing-wait {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  font-size: 0.82em;
+  color: var(--text-muted);
+}
+
+.openclaw-pairing-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--interactive-accent);
+  border-radius: 50%;
+  animation: openclaw-spin 0.8s linear infinite;
+}
+
+@keyframes openclaw-spin {
+  to { transform: rotate(360deg); }
+}

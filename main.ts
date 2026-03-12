@@ -568,7 +568,7 @@ class OnboardingModal extends Modal {
     const stepLabels = this.path === "fresh"
       ? ["Start", "Keys", "Bots", "Install", "Connect", "Pair", "Done"]
       : this.path === "existing"
-        ? ["Start", "Network", "Gateway", "Connect", "Pair", "Done"]
+        ? ["Start", "Connect", "Pair", "Done"]
         : ["Start"];
     const indicator = contentEl.createDiv("openclaw-onboard-steps");
     stepLabels.forEach((label, i) => {
@@ -588,11 +588,9 @@ class OnboardingModal extends Modal {
       if (this.step === 5) return this.renderPairing(contentEl);
       if (this.step === 6) return this.renderDone(contentEl);
     } else {
-      if (this.step === 1) return this.renderNetwork(contentEl);
-      if (this.step === 2) return this.renderGateway(contentEl);
-      if (this.step === 3) return this.renderConnect(contentEl);
-      if (this.step === 4) return this.renderPairing(contentEl);
-      if (this.step === 5) return this.renderDone(contentEl);
+      if (this.step === 1) return this.renderConnect(contentEl);
+      if (this.step === 2) return this.renderPairing(contentEl);
+      if (this.step === 3) return this.renderDone(contentEl);
     }
   }
 
@@ -937,7 +935,11 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     li6.appendText(" Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.");
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 2; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => {
+      if (this.path === "existing") { this.step = 0; this.path = null; }
+      else { this.step = this.step - 1; }
+      this.renderStep();
+    });
 
     const testBtn = btnRow.createEl("button", { text: "Test connection", cls: "mod-cta" });
     testBtn.addEventListener("click", () => void (async () => {
@@ -978,7 +980,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
       if (ok) {
         this.showStatus("✓ Connected!", "success");
-        setTimeout(() => { this.step = 4; this.renderStep(); }, 800);
+        setTimeout(() => { this.step = this.step + 1; this.renderStep(); }, 800);
       } else {
         this.showStatus("Could not connect. Check the troubleshooting steps below.", "error");
         troubleshoot.removeClass("oc-hidden");
@@ -1023,19 +1025,17 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
     // Approval instructions (always visible)
     const approvalInfo = el.createDiv("openclaw-onboard-numbered");
-    const a1 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
-    a1.createEl("strong", { text: "How approval works" });
-    a1.createEl("p", { text: "Click the button below to send a pairing request. Then, on your gateway machine, run:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(a1, "openclaw devices list");
-    a1.createEl("p", { text: "You'll see your pending request. Approve it with:", cls: "openclaw-onboard-hint" });
-    this.makeCopyBox(a1, "openclaw devices approve <requestId>");
-    const a1hint = a1.createEl("p", { cls: "openclaw-onboard-hint" });
-    a1hint.appendText("Replace ");
-    a1hint.createEl("code", { text: "<requestId>" });
-    a1hint.appendText(" with the ID shown in the pending list. You can also approve from the OpenClaw Control UI dashboard.");
+
+    const opt1 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
+    opt1.createEl("p", { text: "Option 1 — Run on the server:", cls: "openclaw-onboard-hint" });
+    this.makeCopyBox(opt1, "openclaw devices approve --latest");
+
+    const opt2 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
+    opt2.createEl("p", { text: "Option 2 — Ask your bot:", cls: "openclaw-onboard-hint" });
+    opt2.createEl("p", { text: "If you already have a channel connected (Telegram, Discord, etc.), just tell your bot: \"approve the pending device\"", cls: "openclaw-onboard-hint" });
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = 3; this.renderStep(); });
+    btnRow.createEl("button", { text: "← back" }).addEventListener("click", () => { this.step = this.step - 1; this.renderStep(); });
 
     const pairBtn = btnRow.createEl("button", {
       text: hasKeys ? "Check pairing status" : "Send pairing request",
@@ -1063,7 +1063,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
           const result = await this.plugin.gateway!.request("sessions.list", {}) as { sessions?: unknown[] } | null;
           if (result?.sessions) {
             this.showStatus("✓ Device is paired and authorized!", "success");
-            setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
+            setTimeout(() => { this.step = this.step + 1; this.renderStep(); }, 1000);
             return;
           }
         } catch (e: unknown) {
@@ -1078,7 +1078,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
 
         // If we got here, connection works — might already be paired
         this.showStatus("✓ Connection working! Proceeding...", "success");
-        setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
+        setTimeout(() => { this.step = this.step + 1; this.renderStep(); }, 1000);
       } catch (e) {
         this.showStatus(`Error: ${e}`, "error");
         pairBtn.disabled = false;
@@ -1086,7 +1086,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
     })());
 
     const skipBtn = btnRow.createEl("button", { text: "Skip for now" });
-    skipBtn.addEventListener("click", () => { this.step = 5; this.renderStep(); });
+    skipBtn.addEventListener("click", () => { this.step = this.step + 1; this.renderStep(); });
   }
 
   private startPairingPoll(btn: HTMLButtonElement): void {
@@ -1104,7 +1104,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
         if (result?.sessions) {
           if (this.pairingPollTimer) clearInterval(this.pairingPollTimer);
           this.showStatus("✓ Device approved!", "success");
-          setTimeout(() => { this.step = 5; this.renderStep(); }, 1000);
+          setTimeout(() => { this.step = this.step + 1; this.renderStep(); }, 1000);
         }
       } catch { /* still waiting */ }
     })(), 2000);
@@ -1179,6 +1179,7 @@ class OpenClawChatView extends ItemView {
   private reconnectBtn!: HTMLButtonElement;
   private abortBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
+  private pairingBannerEl: HTMLElement | null = null;
   private messages: ChatMessage[] = [];
 
   // ─── Per-session stream state ──────────────────────────────────────
@@ -1424,6 +1425,46 @@ class OpenClawChatView extends ItemView {
       if (this.reconnectBtn) this.reconnectBtn.removeClass("oc-hidden");
       this.inputEl.disabled = true;
       this.inputEl.placeholder = "Disconnected";
+    }
+  }
+
+  showPairingBanner(): void {
+    if (this.pairingBannerEl) return; // already showing
+    this.pairingBannerEl = this.messagesEl.parentElement!.createDiv("openclaw-pairing-banner");
+    this.messagesEl.parentElement!.insertBefore(this.pairingBannerEl, this.messagesEl);
+
+    this.pairingBannerEl.createEl("div", { text: "🔐 Device pairing required", cls: "openclaw-pairing-title" });
+    this.pairingBannerEl.createEl("p", {
+      text: "This device needs approval before it can connect.",
+      cls: "openclaw-pairing-desc",
+    });
+
+    const opt1Label = this.pairingBannerEl.createEl("p", { text: "Run on the server:", cls: "openclaw-pairing-option-label" });
+    const copyBox = opt1Label.parentElement!.createDiv("openclaw-pairing-copy-box");
+    const codeEl = copyBox.createEl("code", { text: "openclaw devices approve --latest" });
+    const copyBtn = copyBox.createSpan("openclaw-pairing-copy-btn");
+    copyBtn.textContent = "Copy";
+    copyBox.addEventListener("click", () => {
+      void navigator.clipboard.writeText("openclaw devices approve --latest").then(() => {
+        copyBtn.textContent = "✓";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+      });
+    });
+
+    this.pairingBannerEl.createEl("p", {
+      text: "Or tell your bot on another channel: \"approve the pending device\"",
+      cls: "openclaw-pairing-desc openclaw-pairing-alt",
+    });
+
+    const waitRow = this.pairingBannerEl.createDiv("openclaw-pairing-wait");
+    waitRow.createDiv("openclaw-pairing-spinner");
+    waitRow.createSpan({ text: "Waiting for approval..." });
+  }
+
+  hidePairingBanner(): void {
+    if (this.pairingBannerEl) {
+      this.pairingBannerEl.remove();
+      this.pairingBannerEl = null;
     }
   }
 
@@ -3263,6 +3304,7 @@ export default class OpenClawPlugin extends Plugin {
       onHello: () => {
         this.gatewayConnected = true;
         this.chatView?.updateStatus();
+        this.chatView?.hidePairingBanner(); // Dismiss pairing banner on successful connection
         void this.chatView?.loadHistory();
         void this.chatView?.renderTabs();
         void this.chatView?.loadAgents();
@@ -3275,9 +3317,9 @@ export default class OpenClawPlugin extends Plugin {
       onClose: (info) => {
         this.gatewayConnected = false;
         this.chatView?.updateStatus();
-        // Show pairing instructions if needed
+        // Show pairing banner if needed
         if (info.reason.includes("pairing required") || info.reason.includes("device identity required")) {
-          new Notice("OpenClaw: Device pairing required. Run 'openclaw devices approve' on your gateway machine.", 10000);
+          this.chatView?.showPairingBanner();
         }
       },
       onEvent: (evt) => {
