@@ -1885,7 +1885,11 @@ class OpenClawChatView extends ItemView {
       // Detect session list changes and re-render tabs when needed
       const agentPrefix = this.agentPrefix;
       const currentSessionKeys = new Set(
-        sessions.filter((s: SessionInfo) => s.key.startsWith(agentPrefix) && !s.key.includes(":cron:") && !s.key.includes(":subagent:")).map((s: SessionInfo) => s.key)
+        sessions.filter((s: SessionInfo) => {
+          if (!s.key.startsWith(agentPrefix)) return false;
+          const suffix = s.key.slice(agentPrefix.length);
+          return !suffix.includes(":");
+        }).map((s: SessionInfo) => s.key)
       );
       const trackedKeys = new Set(this.tabSessions.map(t => `${agentPrefix}${t.key}`));
       const added = [...currentSessionKeys].some(k => !trackedKeys.has(k));
@@ -1932,13 +1936,14 @@ class OpenClawChatView extends ItemView {
       } catch { /* use empty */ }
     }
 
-    // Filter: show all agent sessions except cron and sub-agents
+    // Filter: only show user conversation sessions (suffix has no colons)
+    // This excludes channel sessions (telegram:, discord:, webchat:, etc.),
+    // cron jobs, and sub-agents — all of which have colons in their suffix.
     const agentPrefix = this.agentPrefix;
     const convSessions = sessions.filter(s => {
       if (!s.key.startsWith(agentPrefix)) return false;
-      if (s.key.includes(":cron:")) return false;
-      if (s.key.includes(":subagent:")) return false;
-      return true;
+      const suffix = s.key.slice(agentPrefix.length);
+      return !suffix.includes(":");
     });
 
     // Build tab list — ensure "main" is always first
@@ -1947,7 +1952,8 @@ class OpenClawChatView extends ItemView {
     if (mainSession) {
       const used = mainSession.totalTokens || 0;
       const max = mainSession.contextTokens || 200000;
-      this.tabSessions.push({ key: "main", label: "Main", pct: Math.min(100, Math.round((used / max) * 100)) });
+      const mainLabel = mainSession.label || mainSession.displayName || "Main";
+      this.tabSessions.push({ key: "main", label: mainLabel, pct: Math.min(100, Math.round((used / max) * 100)) });
     } else {
       this.tabSessions.push({ key: "main", label: "Main", pct: 0 });
     }
@@ -1977,9 +1983,9 @@ class OpenClawChatView extends ItemView {
       const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
       const labelSpan = row.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
 
-      // Double-click to rename (not main)
-      if (tab.key !== "main") {
-        labelSpan.title = "Double-click to rename";
+      // Double-click to rename (all tabs including main)
+      labelSpan.title = "Double-click to rename";
+      {
         labelSpan.addEventListener("dblclick", (e) => {
           e.stopPropagation();
           const input = createEl("input", { cls: "openclaw-tab-label-input" });
