@@ -284,9 +284,9 @@
   display: none;
   flex: 1;
   min-width: 0;
-  align-items: stretch;
+  align-items: center;
   gap: 0;
-  min-height: 36px;
+  min-height: 30px;
   position: relative;
   border-bottom: 1px solid var(--background-modifier-border);
 }
@@ -297,7 +297,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 0 10px;
+  padding: 0 6px;
   border-radius: 0;
   line-height: 1;
   flex-shrink: 0;
@@ -305,11 +305,12 @@
   align-items: center;
   justify-content: center;
   border-right: 1px solid var(--background-modifier-border);
-  min-width: 40px;
-  min-height: 36px;
+  min-width: 32px;
+  min-height: 30px;
+  opacity: 0.6;
 }
-.oc-hamburger-btn:hover { background: rgba(128,128,128,0.1); }
-.oc-hamburger-btn:active { background: rgba(128,128,128,0.18); }
+.oc-hamburger-btn svg { width: 16px; height: 16px; }
+.oc-hamburger-btn:hover { opacity: 1; }
 
 /* Tab Switcher */
 .oc-tab-switcher {
@@ -318,44 +319,45 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 0 2px;
+  padding: 0 1px;
 }
 .oc-tab-switcher-arrow {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
+  padding: 2px;
+  border-radius: 4px;
   line-height: 1;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.5;
-  transition: opacity 0.15s, background 0.15s;
-  min-width: 30px;
-  min-height: 30px;
+  opacity: 0.4;
+  transition: opacity 0.15s;
+  min-width: 20px;
+  min-height: 24px;
 }
-.oc-tab-switcher-arrow:hover { background: rgba(128,128,128,0.12); opacity: 0.9; }
-.oc-tab-switcher-arrow:active { background: rgba(128,128,128,0.2); opacity: 1; }
+.oc-tab-switcher-arrow svg { width: 12px; height: 12px; }
+.oc-tab-switcher-arrow:hover { opacity: 0.9; }
+.oc-tab-switcher-arrow:active { opacity: 1; }
 
 .oc-tab-switcher-current {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 4px 4px 3px 4px;
+  padding: 3px 2px 2px 2px;
 }
 .oc-tab-switcher-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .oc-tab-switcher-label {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-normal);
   white-space: nowrap;
@@ -365,7 +367,7 @@
 .oc-tab-switcher-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   flex-shrink: 0;
 }
 .oc-tab-switcher-action {
@@ -373,34 +375,34 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 4px;
+  padding: 2px 4px;
+  border-radius: 3px;
   line-height: 1;
-  font-size: 13px;
-  opacity: 0.5;
-  transition: opacity 0.15s, background 0.15s;
-  min-width: 28px;
-  min-height: 28px;
+  font-size: 12px;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+  min-width: 20px;
+  min-height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.oc-tab-switcher-action:hover { opacity: 0.9; background: rgba(128,128,128,0.12); }
-.oc-tab-switcher-action:active { opacity: 1; background: rgba(128,128,128,0.2); }
+.oc-tab-switcher-action:hover { opacity: 0.8; }
+.oc-tab-switcher-action:active { opacity: 1; }
 
 .oc-tab-switcher-meter {
   width: 100%;
-  height: 3px;
-  background: rgba(128,128,128,0.15);
-  border-radius: 1.5px;
+  height: 2px;
+  background: rgba(128,128,128,0.12);
+  border-radius: 1px;
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 .oc-tab-switcher-meter-fill {
   height: 100%;
-  border-radius: 1.5px;
+  border-radius: 1px;
   background: var(--text-normal);
-  opacity: 0.6;
+  opacity: 0.5;
   transition: width 0.5s ease;
   width: 0%;
 }
