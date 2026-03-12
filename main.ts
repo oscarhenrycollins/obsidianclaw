@@ -1982,8 +1982,8 @@ class OpenClawChatView extends ItemView {
       const labelSpan = row.createSpan({ cls: "openclaw-tab-label" });
 
       if (isHome) {
-        // Home tab: house icon + "Home", non-renameable
-        labelSpan.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>Home';
+        // Home tab: house icon only, non-renameable
+        labelSpan.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;opacity:0.8"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
       } else {
         labelSpan.textContent = tab.label;
         // Double-click to rename (non-Home tabs only)
@@ -2051,10 +2051,39 @@ class OpenClawChatView extends ItemView {
           }
         })(); });
       } else {
-        closeBtn.title = "Close tab";
-        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
+        // Other tabs: reset button (↻) + close button (×)
+        const tabResetBtn = row.createSpan({ cls: "openclaw-tab-close openclaw-tab-reset" });
+        tabResetBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+        tabResetBtn.title = "Reset conversation";
+        tabResetBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
+          if (!this.plugin.gateway?.connected) return;
+          if (!this.isCloseConfirmDisabled()) {
+            const confirmed = await this.confirmTabClose(`Reset "${tab.label}"?`, "This will clear the conversation.");
+            if (!confirmed) return;
+          }
+          try {
+            await this.plugin.gateway.request("chat.send", {
+              sessionKey: tab.key,
+              message: "/reset",
+              deliver: false,
+              idempotencyKey: "reset-" + Date.now(),
+            });
+            new Notice(`Reset: ${tab.label}`);
+            if (tab.key === currentKey) {
+              this.messages = [];
+              this.messagesEl.empty();
+            }
+            await this.updateContextMeter();
+            await this.renderTabs();
+          } catch (err: unknown) {
+            new Notice(`Reset failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        })(); });
+
+        const tabCloseBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
+        tabCloseBtn.title = "Close tab";
+        tabCloseBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
-          // Confirm before close
           if (!this.isCloseConfirmDisabled()) {
             const confirmed = await this.confirmTabClose("Close tab?", `Close "${tab.label}"? Chat history will be lost.`);
             if (!confirmed) return;
@@ -2066,9 +2095,7 @@ class OpenClawChatView extends ItemView {
           } catch (err: unknown) {
             new Notice(`Close failed: ${err instanceof Error ? err.message : String(err)}`);
           }
-          // Clean up any stream state for the deleted tab
           this.finishStream(tab.key);
-          // Switch to main if we closed the active tab
           if (tab.key === currentKey) {
             this.plugin.settings.sessionKey = "main";
             await this.plugin.saveSettings();
