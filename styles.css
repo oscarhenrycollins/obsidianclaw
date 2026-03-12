@@ -219,6 +219,22 @@
 .openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
 .openclaw-tab-add .openclaw-tab-meter { display: none; }
 
+/* Home tab: compact, visually distinct */
+.openclaw-tab-home {
+  flex: 0 0 auto !important;
+  max-width: none !important;
+  padding: 6px 8px 0 8px;
+  opacity: 0.45;
+}
+.openclaw-tab-home.active { opacity: 0.85; }
+.openclaw-tab-home .openclaw-tab-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.openclaw-tab-home .openclaw-tab-close {
+  font-size: 11px;
+}
+
 /* Sub-agent tabs */
 .openclaw-tab-subagent {
   opacity: 0.55;

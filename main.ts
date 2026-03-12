@@ -1952,10 +1952,9 @@ class OpenClawChatView extends ItemView {
     if (mainSession) {
       const used = mainSession.totalTokens || 0;
       const max = mainSession.contextTokens || 200000;
-      const mainLabel = mainSession.label || mainSession.displayName || "Untitled";
-      this.tabSessions.push({ key: "main", label: mainLabel, pct: Math.min(100, Math.round((used / max) * 100)) });
+      this.tabSessions.push({ key: "main", label: "Home", pct: Math.min(100, Math.round((used / max) * 100)) });
     } else {
-      this.tabSessions.push({ key: "main", label: "Untitled", pct: 0 });
+      this.tabSessions.push({ key: "main", label: "Home", pct: 0 });
     }
 
     // Add other sessions in creation order (oldest first)
@@ -1974,16 +1973,21 @@ class OpenClawChatView extends ItemView {
     // Render each tab
     for (const tab of this.tabSessions) {
       const isCurrent = tab.key === currentKey;
-      const tabCls = `openclaw-tab${isCurrent ? " active" : ""}`;
+      const isHome = tab.key === "main";
+      const tabCls = `openclaw-tab${isCurrent ? " active" : ""}${isHome ? " openclaw-tab-home" : ""}`;
       const tabEl = this.tabBarEl.createDiv({ cls: tabCls });
 
-      // Row: label + × (× pushed to far right via CSS)
+      // Row: label + action button
       const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
-      const labelSpan = row.createSpan({ text: tab.label, cls: "openclaw-tab-label" });
+      const labelSpan = row.createSpan({ cls: "openclaw-tab-label" });
 
-      // Double-click to rename (all tabs including main)
-      labelSpan.title = "Double-click to rename";
-      {
+      if (isHome) {
+        // Home tab: house icon + "Home", non-renameable
+        labelSpan.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>Home';
+      } else {
+        labelSpan.textContent = tab.label;
+        // Double-click to rename (non-Home tabs only)
+        labelSpan.title = "Double-click to rename";
         labelSpan.addEventListener("dblclick", (e) => {
           e.stopPropagation();
           const input = createEl("input", { cls: "openclaw-tab-label-input" });
@@ -2014,17 +2018,18 @@ class OpenClawChatView extends ItemView {
           input.addEventListener("blur", () => void finish(true));
         });
       }
+      row.appendChild(labelSpan);
 
-      // × button: Main = reset, everything else = close/delete
-      const isResetOnly = tab.key === "main";
-      const closeBtn = row.createSpan({ text: "×", cls: "openclaw-tab-close" });
-      if (isResetOnly) {
-        closeBtn.title = "Reset conversation";
-        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
+      // Action button: Home gets refresh icon, others get ×
+      if (isHome) {
+        const resetBtn = row.createSpan({ cls: "openclaw-tab-close" });
+        resetBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+        resetBtn.title = "Reset conversation";
+        resetBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected) return;
           // Confirm before reset
           if (!this.isCloseConfirmDisabled()) {
-            const confirmed = await this.confirmTabClose("Reset main tab?", "This will clear the conversation.");
+            const confirmed = await this.confirmTabClose("Reset Home tab?", "This will clear the conversation.");
             if (!confirmed) return;
           }
           try {
@@ -2034,14 +2039,7 @@ class OpenClawChatView extends ItemView {
               deliver: false,
               idempotencyKey: "reset-" + Date.now(),
             });
-            // Rename back to default "Untitled"
-            try {
-              await this.plugin.gateway.request("sessions.patch", {
-                key: `${this.agentPrefix}${tab.key}`,
-                label: "Untitled",
-              });
-            } catch { /* best effort */ }
-            new Notice("Reset: Untitled");
+            new Notice("Home tab reset");
             if (tab.key === currentKey) {
               this.messages = [];
               this.messagesEl.empty();
@@ -2246,22 +2244,12 @@ class OpenClawChatView extends ItemView {
   async resetCurrentTab(): Promise<void> {
     if (!this.plugin.gateway?.connected) return;
     try {
-      const sk = this.plugin.settings.sessionKey || "main";
       await this.plugin.gateway.request("chat.send", {
-        sessionKey: sk,
+        sessionKey: this.plugin.settings.sessionKey || "main",
         message: "/reset",
         deliver: false,
         idempotencyKey: "reset-" + Date.now(),
       });
-      // If resetting the main tab, rename it back to "Untitled"
-      if (sk === "main") {
-        try {
-          await this.plugin.gateway.request("sessions.patch", {
-            key: `${this.agentPrefix}main`,
-            label: "Untitled",
-          });
-        } catch { /* best effort */ }
-      }
       this.messages = [];
       if (this.plugin.settings.streamItemsMap) this.plugin.settings.streamItemsMap = {};
       await this.plugin.saveSettings();
