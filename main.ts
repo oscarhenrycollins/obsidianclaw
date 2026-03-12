@@ -2052,7 +2052,7 @@ class OpenClawChatView extends ItemView {
 
     // Label
     if (isHome) {
-      this.tabSwitcherLabelEl.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg> Home';
+      this.tabSwitcherLabelEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-4px;opacity:0.8"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
       this.tabSwitcherLabelEl.title = "";
       this.tabSwitcherLabelEl.style.cursor = "";
       this.tabSwitcherLabelEl.ondblclick = null;
