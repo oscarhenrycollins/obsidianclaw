@@ -1371,12 +1371,13 @@ class OpenClawChatView extends ItemView {
 
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
-    const inputRow = inputArea.createDiv("openclaw-input-row");
-    // Model picker button (pill style)
-    this.brainBtnEl = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
+    // Meta row (model pill above input)
+    const inputMeta = inputArea.createDiv("openclaw-input-meta");
+    this.brainBtnEl = inputMeta.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
     this.brainBtnEl.textContent = "model";
     this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
     this.brainBtnEl.addEventListener("click", () => this.openModelPicker());
+    const inputRow = inputArea.createDiv("openclaw-input-row");
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
     setIcon(attachBtn, "paperclip");
@@ -1457,6 +1458,21 @@ class OpenClawChatView extends ItemView {
     // Initial state
     this.updateStatus();
     this.plugin.chatView = this;
+
+    // Resize container to visual viewport (fixes keyboard dead space on mobile)
+    if (window.visualViewport) {
+      const resizeToViewport = () => {
+        const vv = window.visualViewport!;
+        container.style.height = `${vv.height}px`;
+      };
+      window.visualViewport.addEventListener("resize", resizeToViewport);
+      window.visualViewport.addEventListener("scroll", resizeToViewport);
+      this.register(() => {
+        window.visualViewport?.removeEventListener("resize", resizeToViewport);
+        window.visualViewport?.removeEventListener("scroll", resizeToViewport);
+      });
+      resizeToViewport();
+    }
     
     // Init touch gestures for mobile
     this.initTouchGestures();
