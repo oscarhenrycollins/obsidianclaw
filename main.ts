@@ -1459,30 +1459,29 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Debug: show viewport values to diagnose keyboard gap
+    // Debug: show ancestor chain to diagnose keyboard gap
     const debugEl = container.createDiv();
-    debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.85);color:#fff;font-size:11px;padding:4px 8px;z-index:9999;font-family:monospace;pointer-events:none;';
+    debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.9);color:#fff;font-size:10px;padding:4px 6px;z-index:9999;font-family:monospace;pointer-events:none;line-height:1.3;';
     const updateDebug = () => {
-      const vv = window.visualViewport;
-      const parent = container.parentElement;
-      debugEl.textContent = [
-        `innerH:${window.innerHeight}`,
-        `vv.h:${vv?.height?.toFixed(0) ?? 'N/A'}`,
-        `vv.offTop:${vv?.offsetTop?.toFixed(0) ?? 'N/A'}`,
-        `cont.h:${container.clientHeight}`,
-        `cont.offTop:${container.offsetTop}`,
-        `parent.h:${parent?.clientHeight ?? 'N/A'}`,
-        `cont.style.h:${container.style.height || 'unset'}`,
-      ].join(' | ');
+      const lines: string[] = [];
+      lines.push(`innerH:${window.innerHeight} | focused:${document.activeElement?.tagName}`);
+      let el: HTMLElement | null = container;
+      let depth = 0;
+      while (el && depth < 8) {
+        const cls = el.className ? el.className.toString().slice(0, 40) : '';
+        const tag = el.tagName?.toLowerCase() ?? '?';
+        const h = el.clientHeight;
+        const oh = el.offsetHeight;
+        const st = el.style.height || '-';
+        const cs = getComputedStyle(el);
+        const flex = cs.flex || '-';
+        const ov = cs.overflow;
+        lines.push(`${depth}: <${tag}> h:${h} oh:${oh} flex:"${flex}" ov:${ov} cls:"${cls}"`);
+        el = el.parentElement;
+        depth++;
+      }
+      debugEl.textContent = lines.join('\n');
     };
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", updateDebug);
-      window.visualViewport.addEventListener("scroll", updateDebug);
-      this.register(() => {
-        window.visualViewport?.removeEventListener("resize", updateDebug);
-        window.visualViewport?.removeEventListener("scroll", updateDebug);
-      });
-    }
     window.addEventListener("resize", updateDebug);
     this.inputEl?.addEventListener("focus", () => setTimeout(updateDebug, 500));
     this.inputEl?.addEventListener("blur", () => setTimeout(updateDebug, 500));
