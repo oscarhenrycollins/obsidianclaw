@@ -1459,22 +1459,8 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Resize container to visual viewport (fixes keyboard dead space on mobile)
-    if (window.visualViewport) {
-      const resizeToViewport = () => {
-        const vv = window.visualViewport!;
-        // Account for container's offset from viewport top (Obsidian nav bar, etc.)
-        const top = container.getBoundingClientRect().top;
-        container.style.height = `${vv.height - top}px`;
-      };
-      window.visualViewport.addEventListener("resize", resizeToViewport);
-      window.visualViewport.addEventListener("scroll", resizeToViewport);
-      this.register(() => {
-        window.visualViewport?.removeEventListener("resize", resizeToViewport);
-        window.visualViewport?.removeEventListener("scroll", resizeToViewport);
-      });
-      resizeToViewport();
-    }
+    // Let Obsidian's native layout handle keyboard avoidance on mobile.
+    // No visualViewport hack needed — Obsidian resizes .view-content automatically.
     
     // Init touch gestures for mobile
     this.initTouchGestures();
