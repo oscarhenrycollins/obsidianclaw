@@ -1459,26 +1459,34 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // On iOS, the layout viewport doesn't resize when the keyboard opens —
-    // it stays full-size and the keyboard covers the bottom. We detect
-    // keyboard height via visualViewport and shrink the container accordingly.
+    // Debug: show viewport values to diagnose keyboard gap
+    const debugEl = container.createDiv();
+    debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.85);color:#fff;font-size:11px;padding:4px 8px;z-index:9999;font-family:monospace;pointer-events:none;';
+    const updateDebug = () => {
+      const vv = window.visualViewport;
+      const parent = container.parentElement;
+      debugEl.textContent = [
+        `innerH:${window.innerHeight}`,
+        `vv.h:${vv?.height?.toFixed(0) ?? 'N/A'}`,
+        `vv.offTop:${vv?.offsetTop?.toFixed(0) ?? 'N/A'}`,
+        `cont.h:${container.clientHeight}`,
+        `cont.offTop:${container.offsetTop}`,
+        `parent.h:${parent?.clientHeight ?? 'N/A'}`,
+        `cont.style.h:${container.style.height || 'unset'}`,
+      ].join(' | ');
+    };
     if (window.visualViewport) {
-      const resizeToViewport = () => {
-        const vv = window.visualViewport!;
-        const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-        if (keyboardHeight > 50) {
-          container.style.height = `calc(100% - ${keyboardHeight}px)`;
-        } else {
-          container.style.height = '100%';
-        }
-      };
-      window.visualViewport.addEventListener("resize", resizeToViewport);
-      window.visualViewport.addEventListener("scroll", resizeToViewport);
+      window.visualViewport.addEventListener("resize", updateDebug);
+      window.visualViewport.addEventListener("scroll", updateDebug);
       this.register(() => {
-        window.visualViewport?.removeEventListener("resize", resizeToViewport);
-        window.visualViewport?.removeEventListener("scroll", resizeToViewport);
+        window.visualViewport?.removeEventListener("resize", updateDebug);
+        window.visualViewport?.removeEventListener("scroll", updateDebug);
       });
     }
+    window.addEventListener("resize", updateDebug);
+    this.inputEl?.addEventListener("focus", () => setTimeout(updateDebug, 500));
+    this.inputEl?.addEventListener("blur", () => setTimeout(updateDebug, 500));
+    updateDebug();
     
     // Init touch gestures for mobile
     this.initTouchGestures();
