@@ -1459,76 +1459,11 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Mobile keyboard avoidance: move input area to document.body when keyboard opens.
-    // position:fixed inside the container is broken by ancestor transforms in Obsidian.
-    // Moving to body escapes all containing blocks. Capacitor events give exact height.
-    {
-      const inputArea = container.querySelector('.openclaw-input-area') as HTMLElement | null;
-      const messagesEl = this.messagesEl;
-      let kbHeight = 0;
-      let isFloating = false;
-
-      const onKeyboardShow = (e: any) => {
-        kbHeight = e?.detail?.keyboardHeight ?? e?.keyboardHeight ?? 0;
-        if (!inputArea || kbHeight < 50 || isFloating) return;
-
-        // Move input area to document.body so position:fixed works
-        isFloating = true;
-        document.body.appendChild(inputArea);
-        inputArea.style.position = 'fixed';
-        inputArea.style.bottom = `${kbHeight}px`;
-        inputArea.style.left = '0';
-        inputArea.style.right = '0';
-        inputArea.style.zIndex = '10000';
-        inputArea.style.background = 'var(--background-primary)';
-        inputArea.style.padding = '4px 4px 6px';
-
-        // Scroll messages to bottom
-        requestAnimationFrame(() => {
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        });
-      };
-
-      const restoreInput = () => {
-        if (!inputArea || !isFloating) return;
-        isFloating = false;
-        // Move input area back into the container
-        container.appendChild(inputArea);
-        inputArea.style.position = '';
-        inputArea.style.bottom = '';
-        inputArea.style.left = '';
-        inputArea.style.right = '';
-        inputArea.style.zIndex = '';
-        inputArea.style.background = '';
-        inputArea.style.padding = '';
-        kbHeight = 0;
-      };
-
-      const onKeyboardHide = () => restoreInput();
-
-      // Capacitor keyboard events (global)
-      window.addEventListener('keyboardWillShow', onKeyboardShow);
-      window.addEventListener('keyboardDidShow', onKeyboardShow);
-      window.addEventListener('keyboardWillHide', onKeyboardHide);
-      window.addEventListener('keyboardDidHide', onKeyboardHide);
-
-      // Also try Capacitor plugin API
-      try {
-        const cap = (window as any).Capacitor;
-        if (cap?.Plugins?.Keyboard) {
-          cap.Plugins.Keyboard.addListener('keyboardWillShow', onKeyboardShow);
-          cap.Plugins.Keyboard.addListener('keyboardDidHide', onKeyboardHide);
-        }
-      } catch (_) { /* not available */ }
-
-      this.register(() => {
-        window.removeEventListener('keyboardWillShow', onKeyboardShow);
-        window.removeEventListener('keyboardDidShow', onKeyboardShow);
-        window.removeEventListener('keyboardWillHide', onKeyboardHide);
-        window.removeEventListener('keyboardDidHide', onKeyboardHide);
-        restoreInput();
-      });
-    }
+    // Mobile keyboard avoidance: not yet solved.
+    // Known: Capacitor events work (kbHeight=350), visualViewport useless (874 always).
+    // Known: position:fixed inside container broken by ancestor transforms.
+    // Known: moving input to document.body breaks keyboard (loses focus → keyboard dismisses).
+    // TODO: find approach that works within Obsidian's constraints.
     
     // Init touch gestures for mobile
     this.initTouchGestures();
