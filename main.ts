@@ -1459,17 +1459,65 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Mobile keyboard avoidance: Capacitor Keyboard.setResizeMode('native').
-    // Obsidian sets resize mode to 'none', meaning the webview stays full-screen
-    // when the keyboard opens. Changing to 'native' makes the webview shrink,
-    // so Obsidian's layout recalculates and the input stays above the keyboard.
+    // Mobile keyboard avoidance:
+    // 1. Capacitor Keyboard.setResizeMode('native') — makes webview shrink with keyboard
+    // 2. Hide Obsidian's bottom drawer elements when keyboard is open — they waste ~120px
     try {
       const cap = (window as any).Capacitor;
-      if (cap?.Plugins?.Keyboard?.setResizeMode) {
-        await cap.Plugins.Keyboard.setResizeMode({ mode: 'native' });
-        // Restore Obsidian's default when this view closes
+      if (cap?.Plugins?.Keyboard) {
+        const kb = cap.Plugins.Keyboard;
+
+        // Set resize mode to native so webview shrinks
+        await kb.setResizeMode?.({ mode: 'native' });
+
+        // Find bottom drawer siblings that waste space
+        const drawerInner = container.closest('.workspace-drawer-inner') as HTMLElement | null;
+        const tabContainer = drawerInner?.querySelector('.workspace-drawer-tab-container') as HTMLElement | null;
+        let hiddenSiblings: HTMLElement[] = [];
+
+        const onKeyboardShow = () => {
+          if (!drawerInner || !tabContainer) return;
+          // Hide all siblings of workspace-drawer-tab-container (tab dots, bottom panes)
+          hiddenSiblings = [];
+          for (const child of Array.from(drawerInner.children) as HTMLElement[]) {
+            if (child !== tabContainer && child.style.display !== 'none') {
+              hiddenSiblings.push(child);
+              child.style.display = 'none';
+            }
+          }
+          // Also hide tab header within the tab container (the "Plugin" header bar)
+          const activeTabContainer = tabContainer.querySelector('.workspace-drawer-active-tab-container') as HTMLElement | null;
+          if (activeTabContainer) {
+            for (const child of Array.from(activeTabContainer.children) as HTMLElement[]) {
+              const isContent = child.classList.contains('workspace-drawer-active-tab-content');
+              if (!isContent && child.style.display !== 'none') {
+                hiddenSiblings.push(child);
+                child.style.display = 'none';
+              }
+            }
+          }
+        };
+
+        const onKeyboardHide = () => {
+          // Restore hidden siblings
+          for (const el of hiddenSiblings) {
+            el.style.display = '';
+          }
+          hiddenSiblings = [];
+        };
+
+        // Listen for Capacitor keyboard events
+        kb.addListener('keyboardWillShow', onKeyboardShow);
+        kb.addListener('keyboardDidHide', onKeyboardHide);
+        window.addEventListener('keyboardWillShow', onKeyboardShow);
+        window.addEventListener('keyboardDidHide', onKeyboardHide);
+
+        // Restore on view close
         this.register(() => {
-          cap.Plugins.Keyboard.setResizeMode?.({ mode: 'none' });
+          kb.setResizeMode?.({ mode: 'none' });
+          onKeyboardHide();
+          window.removeEventListener('keyboardWillShow', onKeyboardShow);
+          window.removeEventListener('keyboardDidHide', onKeyboardHide);
         });
       }
     } catch (_) { /* not on mobile / Capacitor not available */ }
