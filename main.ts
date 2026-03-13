@@ -1459,33 +1459,77 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Debug: show ancestor chain to diagnose keyboard gap
-    const debugEl = container.createDiv();
-    debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.9);color:#fff;font-size:10px;padding:4px 6px;z-index:9999;font-family:monospace;pointer-events:none;line-height:1.3;';
-    const updateDebug = () => {
-      const lines: string[] = [];
-      lines.push(`innerH:${window.innerHeight} | focused:${document.activeElement?.tagName}`);
-      let el: HTMLElement | null = container;
-      let depth = 0;
-      while (el && depth < 8) {
-        const cls = el.className ? el.className.toString().slice(0, 40) : '';
-        const tag = el.tagName?.toLowerCase() ?? '?';
-        const h = el.clientHeight;
-        const oh = el.offsetHeight;
-        const st = el.style.height || '-';
-        const cs = getComputedStyle(el);
-        const flex = cs.flex || '-';
-        const ov = cs.overflow;
-        lines.push(`${depth}: <${tag}> h:${h} oh:${oh} flex:"${flex}" ov:${ov} cls:"${cls}"`);
-        el = el.parentElement;
-        depth++;
-      }
-      debugEl.textContent = lines.join('\n');
-    };
-    window.addEventListener("resize", updateDebug);
-    this.inputEl?.addEventListener("focus", () => setTimeout(updateDebug, 500));
-    this.inputEl?.addEventListener("blur", () => setTimeout(updateDebug, 500));
-    updateDebug();
+    // Mobile keyboard avoidance via Capacitor keyboard events
+    // Obsidian mobile (Capacitor) fires these with actual keyboard height.
+    // The workspace-drawer-inner stays full-screen (874px) and never accounts
+    // for the keyboard, so we shrink it ourselves.
+    {
+      const drawerInner = container.closest('.workspace-drawer-inner') as HTMLElement | null;
+
+      // Debug overlay (temporary)
+      const debugEl = container.createDiv();
+      debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.9);color:#fff;font-size:11px;padding:4px 6px;z-index:9999;font-family:monospace;pointer-events:none;';
+      debugEl.textContent = `drawerInner: ${drawerInner ? 'found' : 'null'} | listening...`;
+
+      let kbHeight = 0;
+      const onKeyboardShow = (e: any) => {
+        kbHeight = e?.detail?.keyboardHeight ?? e?.keyboardHeight ?? 0;
+        debugEl.textContent = `KB SHOW h:${kbHeight} | drawerInner:${drawerInner?.clientHeight}`;
+        if (drawerInner && kbHeight > 50) {
+          drawerInner.style.height = `calc(100% - ${kbHeight}px)`;
+        }
+      };
+      const onKeyboardHide = () => {
+        debugEl.textContent = `KB HIDE | drawerInner:${drawerInner?.clientHeight}`;
+        if (drawerInner) {
+          drawerInner.style.height = '';
+        }
+        kbHeight = 0;
+      };
+
+      // Capacitor keyboard events (global)
+      window.addEventListener('keyboardWillShow', onKeyboardShow);
+      window.addEventListener('keyboardDidShow', onKeyboardShow);
+      window.addEventListener('keyboardWillHide', onKeyboardHide);
+      window.addEventListener('keyboardDidHide', onKeyboardHide);
+
+      // Also try Capacitor plugin API
+      try {
+        const cap = (window as any).Capacitor;
+        if (cap?.Plugins?.Keyboard) {
+          cap.Plugins.Keyboard.addListener('keyboardWillShow', onKeyboardShow);
+          cap.Plugins.Keyboard.addListener('keyboardDidHide', onKeyboardHide);
+          debugEl.textContent += ' | Cap.Keyboard found';
+        }
+      } catch (_) { /* not available */ }
+
+      // Fallback: focus/blur with estimated height
+      this.inputEl?.addEventListener('focus', () => {
+        setTimeout(() => {
+          if (kbHeight === 0 && drawerInner) {
+            // Capacitor events didn't fire — use estimate
+            debugEl.textContent = `FALLBACK focus | est 300px`;
+            drawerInner.style.height = `calc(100% - 300px)`;
+          }
+        }, 600);
+      });
+      this.inputEl?.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (kbHeight === 0 && drawerInner) {
+            debugEl.textContent = `FALLBACK blur | reset`;
+            drawerInner.style.height = '';
+          }
+        }, 100);
+      });
+
+      this.register(() => {
+        window.removeEventListener('keyboardWillShow', onKeyboardShow);
+        window.removeEventListener('keyboardDidShow', onKeyboardShow);
+        window.removeEventListener('keyboardWillHide', onKeyboardHide);
+        window.removeEventListener('keyboardDidHide', onKeyboardHide);
+        if (drawerInner) drawerInner.style.height = '';
+      });
+    }
     
     // Init touch gestures for mobile
     this.initTouchGestures();
