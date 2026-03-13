@@ -1463,7 +1463,9 @@ class OpenClawChatView extends ItemView {
     if (window.visualViewport) {
       const resizeToViewport = () => {
         const vv = window.visualViewport!;
-        container.style.height = `${vv.height}px`;
+        // Account for container's offset from viewport top (Obsidian nav bar, etc.)
+        const top = container.getBoundingClientRect().top;
+        container.style.height = `${vv.height - top}px`;
       };
       window.visualViewport.addEventListener("resize", resizeToViewport);
       window.visualViewport.addEventListener("scroll", resizeToViewport);
