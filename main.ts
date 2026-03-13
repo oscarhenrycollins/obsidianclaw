@@ -1459,31 +1459,51 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Mobile keyboard avoidance via Capacitor keyboard events
-    // Obsidian mobile (Capacitor) fires these with actual keyboard height.
-    // The workspace-drawer-inner stays full-screen (874px) and never accounts
-    // for the keyboard, so we shrink it ourselves.
+    // Mobile keyboard avoidance: fix-position the input area above the keyboard.
+    // Capacitor fires keyboardWillShow/keyboardDidHide with exact keyboard height.
+    // We position the input-area fixed at bottom: kbHeight so it sits right above
+    // the keyboard, without touching any Obsidian parent elements.
     {
-      const drawerInner = container.closest('.workspace-drawer-inner') as HTMLElement | null;
-
-      // Debug overlay (temporary)
-      const debugEl = container.createDiv();
-      debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.9);color:#fff;font-size:11px;padding:4px 6px;z-index:9999;font-family:monospace;pointer-events:none;';
-      debugEl.textContent = `drawerInner: ${drawerInner ? 'found' : 'null'} | listening...`;
-
+      const inputArea = container.querySelector('.openclaw-input-area') as HTMLElement | null;
+      const messagesEl = this.messagesEl;
       let kbHeight = 0;
+      let inputAreaNaturalHeight = 0;
+
       const onKeyboardShow = (e: any) => {
         kbHeight = e?.detail?.keyboardHeight ?? e?.keyboardHeight ?? 0;
-        debugEl.textContent = `KB SHOW h:${kbHeight} | drawerInner:${drawerInner?.clientHeight}`;
-        if (drawerInner && kbHeight > 50) {
-          drawerInner.style.height = `calc(100% - ${kbHeight}px)`;
-        }
+        if (!inputArea || kbHeight < 50) return;
+
+        // Measure input area height before repositioning
+        inputAreaNaturalHeight = inputArea.offsetHeight;
+
+        // Fix-position the input area right above the keyboard
+        inputArea.style.position = 'fixed';
+        inputArea.style.bottom = `${kbHeight}px`;
+        inputArea.style.left = '0';
+        inputArea.style.right = '0';
+        inputArea.style.zIndex = '100';
+        inputArea.style.background = 'var(--background-primary)';
+        inputArea.style.paddingBottom = '4px';
+
+        // Add bottom padding to messages so content isn't hidden behind fixed input
+        messagesEl.style.paddingBottom = `${inputAreaNaturalHeight + 8}px`;
+
+        // Scroll messages to bottom
+        requestAnimationFrame(() => {
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        });
       };
+
       const onKeyboardHide = () => {
-        debugEl.textContent = `KB HIDE | drawerInner:${drawerInner?.clientHeight}`;
-        if (drawerInner) {
-          drawerInner.style.height = '';
-        }
+        if (!inputArea) return;
+        inputArea.style.position = '';
+        inputArea.style.bottom = '';
+        inputArea.style.left = '';
+        inputArea.style.right = '';
+        inputArea.style.zIndex = '';
+        inputArea.style.background = '';
+        inputArea.style.paddingBottom = '';
+        messagesEl.style.paddingBottom = '';
         kbHeight = 0;
       };
 
@@ -1499,35 +1519,15 @@ class OpenClawChatView extends ItemView {
         if (cap?.Plugins?.Keyboard) {
           cap.Plugins.Keyboard.addListener('keyboardWillShow', onKeyboardShow);
           cap.Plugins.Keyboard.addListener('keyboardDidHide', onKeyboardHide);
-          debugEl.textContent += ' | Cap.Keyboard found';
         }
       } catch (_) { /* not available */ }
-
-      // Fallback: focus/blur with estimated height
-      this.inputEl?.addEventListener('focus', () => {
-        setTimeout(() => {
-          if (kbHeight === 0 && drawerInner) {
-            // Capacitor events didn't fire — use estimate
-            debugEl.textContent = `FALLBACK focus | est 300px`;
-            drawerInner.style.height = `calc(100% - 300px)`;
-          }
-        }, 600);
-      });
-      this.inputEl?.addEventListener('blur', () => {
-        setTimeout(() => {
-          if (kbHeight === 0 && drawerInner) {
-            debugEl.textContent = `FALLBACK blur | reset`;
-            drawerInner.style.height = '';
-          }
-        }, 100);
-      });
 
       this.register(() => {
         window.removeEventListener('keyboardWillShow', onKeyboardShow);
         window.removeEventListener('keyboardDidShow', onKeyboardShow);
         window.removeEventListener('keyboardWillHide', onKeyboardHide);
         window.removeEventListener('keyboardDidHide', onKeyboardHide);
-        if (drawerInner) drawerInner.style.height = '';
+        onKeyboardHide();
       });
     }
     
