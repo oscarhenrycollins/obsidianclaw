@@ -1459,8 +1459,26 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Let Obsidian's native layout handle keyboard avoidance on mobile.
-    // No visualViewport hack needed — Obsidian resizes .view-content automatically.
+    // On iOS, the layout viewport doesn't resize when the keyboard opens —
+    // it stays full-size and the keyboard covers the bottom. We detect
+    // keyboard height via visualViewport and shrink the container accordingly.
+    if (window.visualViewport) {
+      const resizeToViewport = () => {
+        const vv = window.visualViewport!;
+        const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        if (keyboardHeight > 50) {
+          container.style.height = `calc(100% - ${keyboardHeight}px)`;
+        } else {
+          container.style.height = '100%';
+        }
+      };
+      window.visualViewport.addEventListener("resize", resizeToViewport);
+      window.visualViewport.addEventListener("scroll", resizeToViewport);
+      this.register(() => {
+        window.visualViewport?.removeEventListener("resize", resizeToViewport);
+        window.visualViewport?.removeEventListener("scroll", resizeToViewport);
+      });
+    }
     
     // Init touch gestures for mobile
     this.initTouchGestures();
