@@ -288,7 +288,13 @@
   gap: 0;
   min-height: 30px;
   position: relative;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: rgba(var(--background-secondary-alt-rgb, 30,30,30), 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 0 0 12px 12px;
+  margin: 0 4px;
+  overflow: visible;
 }
 .oc-hamburger-bar.oc-visible { display: flex; }
 
@@ -494,9 +500,10 @@
   outline: none;
 }
 
-/* Hide desktop tab bar border when hamburger is active */
+/* Hide desktop tab bar when hamburger is active */
 .openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) {
   border-bottom: none;
+  background: transparent;
 }
 .openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) > .openclaw-tab-bar {
   display: none;
@@ -888,20 +895,23 @@
 /* Input area */
 .openclaw-input-area {
   flex-shrink: 0;
-  padding: 2px 4px 4px;
+  padding: 2px 4px 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .openclaw-input-row {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  background: var(--background-secondary);
+  background: rgba(var(--background-secondary-alt-rgb, 30,30,30), 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: 22px;
   padding: 4px 4px 4px 10px;
-  border: none;
+  border: 1px solid rgba(255,255,255,0.06);
   min-height: 40px;
   overflow: hidden;
-  margin-bottom: 0;
+  margin-bottom: 2px;
 }
 
 .openclaw-input {
@@ -998,23 +1008,32 @@
 
 /* Attach button */
 .openclaw-brain-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  height: 24px;
+  border-radius: 12px;
   border: none;
-  background: transparent;
-  color: var(--text-faint);
+  background: rgba(128,128,128,0.10);
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  padding: 0;
-  transition: color 0.15s, background 0.15s;
+  padding: 0 8px;
+  transition: background 0.15s;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  gap: 2px;
+  font-family: inherit;
 }
 .openclaw-brain-btn:hover {
-  color: var(--text-muted);
-  background: rgba(128,128,128,0.1);
+  background: rgba(128,128,128,0.20);
+}
+.openclaw-brain-btn .svg-icon { display: none; }
+.openclaw-brain-btn-arrow {
+  font-size: 8px;
+  color: var(--text-faint);
+  margin-left: 1px;
 }
 
 .openclaw-attach-btn {

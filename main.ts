@@ -1179,6 +1179,7 @@ class OpenClawChatView extends ItemView {
   private tabArrowLeftEl!: HTMLElement;
   private tabArrowRightEl!: HTMLElement;
   private isMobileMode = false;
+  private brainBtnEl!: HTMLElement;
   private tabSessions: { key: string; label: string; pct: number }[] = [];
   private renderingTabs = false;
   private tabDeleteInProgress = false;
@@ -1371,10 +1372,11 @@ class OpenClawChatView extends ItemView {
     // Input area
     const inputArea = container.createDiv("openclaw-input-area");
     const inputRow = inputArea.createDiv("openclaw-input-row");
-    // Brain button (model picker)
-    const brainBtn = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
-    setIcon(brainBtn, "sparkles");
-    brainBtn.addEventListener("click", () => this.openModelPicker());
+    // Model picker button (pill style)
+    this.brainBtnEl = inputRow.createEl("button", { cls: "openclaw-brain-btn", attr: { "aria-label": "Switch model" } });
+    this.brainBtnEl.textContent = "model";
+    this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
+    this.brainBtnEl.addEventListener("click", () => this.openModelPicker());
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
     setIcon(attachBtn, "paperclip");
@@ -2016,11 +2018,17 @@ class OpenClawChatView extends ItemView {
   }
 
   updateModelPill(): void {
-    if (!this.modelLabelEl) return;
     const model = this.currentModel ? this.shortModelName(this.currentModel) : "model";
-    this.modelLabelEl.empty();
-    this.modelLabelEl.createSpan({ text: model, cls: "openclaw-ctx-pill-text" });
-    this.modelLabelEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
+    if (this.modelLabelEl) {
+      this.modelLabelEl.empty();
+      this.modelLabelEl.createSpan({ text: model, cls: "openclaw-ctx-pill-text" });
+      this.modelLabelEl.createSpan({ text: " ▾", cls: "openclaw-ctx-pill-arrow" });
+    }
+    if (this.brainBtnEl) {
+      this.brainBtnEl.empty();
+      this.brainBtnEl.appendText(model);
+      this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
+    }
   }
 
   private updateTabMode(): void {
