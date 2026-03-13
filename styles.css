@@ -386,6 +386,17 @@
   width: 0%;
 }
 
+/* Tab loading spinner */
+.oc-tab-loading-spinner {
+  display: inline-block;
+  animation: oc-spin 0.8s linear infinite;
+  font-size: 12px;
+}
+@keyframes oc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .oc-switcher-rename-input {
   font-size: 13px;
   font-weight: 600;

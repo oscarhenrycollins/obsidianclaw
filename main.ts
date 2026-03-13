@@ -2243,6 +2243,13 @@ class OpenClawChatView extends ItemView {
 
   private switchToTab(tab: { key: string; label: string; pct: number }): void {
     void (async () => {
+      // Show loading indicator
+      if (this.isMobileMode && this.tabSwitcherLabelEl) {
+        this.tabSwitcherLabelEl.empty();
+        const spinner = this.tabSwitcherLabelEl.createSpan({ cls: "oc-tab-loading-spinner" });
+        spinner.innerHTML = "⟳";
+        this.tabSwitcherLabelEl.createSpan({ text: " Loading..." });
+      }
       this.streamEl = null;
       this.typingEl.addClass("oc-hidden");
       this.abortBtn.addClass("oc-hidden");
