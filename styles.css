@@ -297,7 +297,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 1px 6px;
   border-radius: 4px;
   line-height: 1;
   flex-shrink: 0;
@@ -305,8 +305,6 @@
   align-items: center;
   justify-content: center;
   margin: 0 2px 0 3px;
-  min-width: 24px;
-  min-height: 24px;
   opacity: 0.4;
 }
 .oc-hamburger-btn svg { width: 14px; height: 14px; }
@@ -326,7 +324,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 1px 6px;
   border-radius: 4px;
   line-height: 1;
   flex-shrink: 0;
@@ -335,8 +333,6 @@
   justify-content: center;
   opacity: 0.4;
   transition: opacity 0.15s;
-  min-width: 24px;
-  min-height: 24px;
 }
 .oc-tab-switcher-arrow svg { width: 14px; height: 14px; }
 .oc-tab-switcher-arrow:hover { opacity: 0.9; }
@@ -375,14 +371,12 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 1px 6px;
   border-radius: 4px;
   line-height: 1;
   font-size: 12px;
   opacity: 0.4;
   transition: opacity 0.15s;
-  min-width: 24px;
-  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
