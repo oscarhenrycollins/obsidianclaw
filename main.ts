@@ -1459,34 +1459,29 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Mobile keyboard avoidance: fix-position the input area above the keyboard.
-    // Capacitor fires keyboardWillShow/keyboardDidHide with exact keyboard height.
-    // We position the input-area fixed at bottom: kbHeight so it sits right above
-    // the keyboard, without touching any Obsidian parent elements.
+    // Mobile keyboard avoidance: move input area to document.body when keyboard opens.
+    // position:fixed inside the container is broken by ancestor transforms in Obsidian.
+    // Moving to body escapes all containing blocks. Capacitor events give exact height.
     {
       const inputArea = container.querySelector('.openclaw-input-area') as HTMLElement | null;
       const messagesEl = this.messagesEl;
       let kbHeight = 0;
-      let inputAreaNaturalHeight = 0;
+      let isFloating = false;
 
       const onKeyboardShow = (e: any) => {
         kbHeight = e?.detail?.keyboardHeight ?? e?.keyboardHeight ?? 0;
-        if (!inputArea || kbHeight < 50) return;
+        if (!inputArea || kbHeight < 50 || isFloating) return;
 
-        // Measure input area height before repositioning
-        inputAreaNaturalHeight = inputArea.offsetHeight;
-
-        // Fix-position the input area right above the keyboard
+        // Move input area to document.body so position:fixed works
+        isFloating = true;
+        document.body.appendChild(inputArea);
         inputArea.style.position = 'fixed';
         inputArea.style.bottom = `${kbHeight}px`;
         inputArea.style.left = '0';
         inputArea.style.right = '0';
-        inputArea.style.zIndex = '100';
+        inputArea.style.zIndex = '10000';
         inputArea.style.background = 'var(--background-primary)';
-        inputArea.style.paddingBottom = '4px';
-
-        // Add bottom padding to messages so content isn't hidden behind fixed input
-        messagesEl.style.paddingBottom = `${inputAreaNaturalHeight + 8}px`;
+        inputArea.style.padding = '4px 4px 6px';
 
         // Scroll messages to bottom
         requestAnimationFrame(() => {
@@ -1494,18 +1489,22 @@ class OpenClawChatView extends ItemView {
         });
       };
 
-      const onKeyboardHide = () => {
-        if (!inputArea) return;
+      const restoreInput = () => {
+        if (!inputArea || !isFloating) return;
+        isFloating = false;
+        // Move input area back into the container
+        container.appendChild(inputArea);
         inputArea.style.position = '';
         inputArea.style.bottom = '';
         inputArea.style.left = '';
         inputArea.style.right = '';
         inputArea.style.zIndex = '';
         inputArea.style.background = '';
-        inputArea.style.paddingBottom = '';
-        messagesEl.style.paddingBottom = '';
+        inputArea.style.padding = '';
         kbHeight = 0;
       };
+
+      const onKeyboardHide = () => restoreInput();
 
       // Capacitor keyboard events (global)
       window.addEventListener('keyboardWillShow', onKeyboardShow);
@@ -1527,7 +1526,7 @@ class OpenClawChatView extends ItemView {
         window.removeEventListener('keyboardDidShow', onKeyboardShow);
         window.removeEventListener('keyboardWillHide', onKeyboardHide);
         window.removeEventListener('keyboardDidHide', onKeyboardHide);
-        onKeyboardHide();
+        restoreInput();
       });
     }
     
