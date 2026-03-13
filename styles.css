@@ -295,20 +295,20 @@
 .oc-hamburger-btn {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-normal);
   cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 0 8px;
+  border-radius: 0;
   line-height: 1;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 2px 0 3px;
-  opacity: 0.4;
+  opacity: 0.7;
+  border-right: 1px solid var(--background-modifier-border);
 }
-.oc-hamburger-btn svg { width: 14px; height: 14px; }
-.oc-hamburger-btn:hover { opacity: 0.9; }
+.oc-hamburger-btn svg { width: 18px; height: 18px; }
+.oc-hamburger-btn:hover { opacity: 1; }
 
 /* Tab Switcher */
 .oc-tab-switcher {
@@ -320,23 +320,8 @@
   padding: 0 1px;
 }
 .oc-tab-switcher-arrow {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 4px;
-  line-height: 1;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.4;
-  transition: opacity 0.15s;
+  display: none;
 }
-.oc-tab-switcher-arrow svg { width: 14px; height: 14px; }
-.oc-tab-switcher-arrow:hover { opacity: 0.9; }
-.oc-tab-switcher-arrow:active { opacity: 1; }
 
 .oc-tab-switcher-current {
   flex: 1;
@@ -371,11 +356,11 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
   line-height: 1;
   font-size: 12px;
-  opacity: 0.4;
+  opacity: 0.35;
   transition: opacity 0.15s;
   display: flex;
   align-items: center;
