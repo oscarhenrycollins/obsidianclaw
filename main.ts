@@ -1459,11 +1459,34 @@ class OpenClawChatView extends ItemView {
     this.updateStatus();
     this.plugin.chatView = this;
 
-    // Mobile keyboard avoidance: not yet solved.
-    // Known: Capacitor events work (kbHeight=350), visualViewport useless (874 always).
-    // Known: position:fixed inside container broken by ancestor transforms.
-    // Known: moving input to document.body breaks keyboard (loses focus → keyboard dismisses).
-    // TODO: find approach that works within Obsidian's constraints.
+    // Mobile keyboard avoidance: try Capacitor Keyboard.setResizeMode('native').
+    // Obsidian likely sets resize mode to 'none', meaning the webview never resizes
+    // when the keyboard opens (innerHeight stays 874). Setting to 'native' makes the
+    // webview shrink, so all CSS height: 100% chains recalculate automatically.
+    {
+      // Debug overlay (temporary)
+      const debugEl = container.createDiv();
+      debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(255,0,0,0.9);color:#fff;font-size:11px;padding:4px 6px;z-index:9999;font-family:monospace;pointer-events:none;';
+      debugEl.textContent = 'Checking Capacitor Keyboard...';
+
+      try {
+        const cap = (window as any).Capacitor;
+        if (cap?.Plugins?.Keyboard) {
+          const kb = cap.Plugins.Keyboard;
+          // Read current mode
+          const current = await kb.getResizeMode?.();
+          debugEl.textContent = `Current resize mode: ${JSON.stringify(current)}`;
+          // Try setting to native
+          await kb.setResizeMode?.({ mode: 'native' });
+          const after = await kb.getResizeMode?.();
+          debugEl.textContent = `Was: ${JSON.stringify(current)} → Now: ${JSON.stringify(after)}`;
+        } else {
+          debugEl.textContent = 'Capacitor.Plugins.Keyboard not found';
+        }
+      } catch (e: any) {
+        debugEl.textContent = `Error: ${e?.message ?? e}`;
+      }
+    }
     
     // Init touch gestures for mobile
     this.initTouchGestures();
