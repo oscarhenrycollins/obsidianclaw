@@ -46,6 +46,8 @@ Done. The device is remembered permanently.
 - [Tailscale](https://tailscale.com/download) on all your devices
 - Gateway bound to Tailscale: `openclaw config set gateway.bind tailnet && openclaw gateway restart`
 
+> ⚠️ **OpenClaw 2026.3.x compatibility:** Versions 2026.3.1 through 2026.3.13 have a bug where `app://` origins (used by Obsidian) are silently rejected by the gateway. If you're on 2026.3.x and the plugin can't connect, downgrade to **2026.2.26**: `npm i -g openclaw@2026.2.26 && openclaw gateway restart`. This will be resolved in a future release.
+
 ## Commands
 
 | Command | Description |
