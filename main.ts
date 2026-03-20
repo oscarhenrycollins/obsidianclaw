@@ -276,6 +276,10 @@ interface SessionInfo {
   contextTokens?: number;
   createdAt?: number;
   updatedAt?: number;
+  thinkingLevel?: string;
+  verboseLevel?: string;
+  thinkingDefault?: string;
+  verboseDefault?: string;
 }
 
 interface AgentListItem {
@@ -1300,6 +1304,14 @@ class OpenClawChatView extends ItemView {
   currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = "";
 
+  // Bar controls state
+  private thinkingLevel: string = "";
+  private verboseLevel: string = "";
+  private thinkingDefault: string = "";
+  private verboseDefault: string = "";
+  private thinkChipEl: HTMLElement | null = null;
+  private verboseChipEl: HTMLElement | null = null;
+
   // Agent switcher state
   private agents: AgentInfo[] = [];
   private activeAgent: AgentInfo = { id: "main", name: "Agent", emoji: "🤖", creature: "" };
@@ -1456,6 +1468,14 @@ class OpenClawChatView extends ItemView {
     this.brainBtnEl.textContent = "model";
     this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
     this.brainBtnEl.addEventListener("click", () => this.openModelPicker());
+
+    // Bar control chips (thinking + verbose)
+    inputMeta.createSpan({ text: "·", cls: "oc-bar-sep" });
+    this.thinkChipEl = inputMeta.createSpan({ text: "think: default", cls: "oc-bar-chip" });
+    this.thinkChipEl.addEventListener("click", () => { void this.cycleBarControl("thinkingLevel", ["", "off", "low", "medium", "high"]); });
+    inputMeta.createSpan({ text: "·", cls: "oc-bar-sep" });
+    this.verboseChipEl = inputMeta.createSpan({ text: "verbose: default", cls: "oc-bar-chip" });
+    this.verboseChipEl.addEventListener("click", () => { void this.cycleBarControl("verboseLevel", ["", "off", "on", "full"]); });
     const inputRow = inputArea.createDiv("openclaw-input-row");
     // Attach button + hidden file input
     const attachBtn = inputRow.createEl("button", { cls: "openclaw-attach-btn", attr: { "aria-label": "Attach file" } });
@@ -2133,6 +2153,8 @@ class OpenClawChatView extends ItemView {
       if (session.displayName && session.displayName !== this.cachedSessionDisplayName) {
         this.cachedSessionDisplayName = session.displayName;
       }
+      // Update bar controls (thinking/verbose) from session data
+      this.updateBarControlsFromSession(session);
       // Detect session list changes and re-render tabs when needed
       const agentPrefix = this.agentPrefix;
       const currentSessionKeys = new Set(
@@ -2172,6 +2194,53 @@ class OpenClawChatView extends ItemView {
       this.brainBtnEl.appendText(model);
       this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
     }
+  }
+
+  // ─── Bar Controls (thinking / verbose) ────────────────────────────
+
+  private barControlDefaultLabel(defaultVal: string): string {
+    return defaultVal ? `default (${defaultVal})` : "default";
+  }
+
+  updateBarControls(): void {
+    if (this.thinkChipEl) {
+      const label = this.thinkingLevel || this.barControlDefaultLabel(this.thinkingDefault);
+      this.thinkChipEl.textContent = "think: " + label;
+      this.thinkChipEl.toggleClass("oc-bar-chip-active", !!this.thinkingLevel);
+    }
+    if (this.verboseChipEl) {
+      const label = this.verboseLevel || this.barControlDefaultLabel(this.verboseDefault);
+      this.verboseChipEl.textContent = "verbose: " + label;
+      this.verboseChipEl.toggleClass("oc-bar-chip-active", !!this.verboseLevel);
+    }
+  }
+
+  private async cycleBarControl(field: "thinkingLevel" | "verboseLevel", cycle: string[]): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    const current = field === "thinkingLevel" ? this.thinkingLevel : this.verboseLevel;
+    const idx = cycle.indexOf(current);
+    const next = cycle[(idx + 1) % cycle.length];
+    const patch: Record<string, string | null> = {};
+    patch[field] = next || null; // null = clear override, inherit default
+    try {
+      await this.plugin.gateway.request("sessions.patch", {
+        key: `${this.agentPrefix}${this.activeSessionKey}`,
+        ...patch,
+      });
+      if (field === "thinkingLevel") this.thinkingLevel = next;
+      else this.verboseLevel = next;
+      this.updateBarControls();
+    } catch (err: unknown) {
+      new Notice(`Failed to update ${field}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private updateBarControlsFromSession(session: SessionInfo): void {
+    this.thinkingLevel = session.thinkingLevel || "";
+    this.verboseLevel = session.verboseLevel || "";
+    if (session.thinkingDefault) this.thinkingDefault = session.thinkingDefault;
+    if (session.verboseDefault) this.verboseDefault = session.verboseDefault;
+    this.updateBarControls();
   }
 
   private updateTabMode(): void {

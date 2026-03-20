@@ -1050,6 +1050,45 @@
   margin-left: 1px;
 }
 
+/* ─── Bar control chips (thinking/verbose) ───────────────────────── */
+.oc-bar-sep {
+  color: var(--text-faint);
+  font-size: 10px;
+  opacity: 0.4;
+  user-select: none;
+  flex-shrink: 0;
+}
+.oc-bar-chip {
+  height: 22px;
+  border-radius: 11px;
+  border: none;
+  background: rgba(128,128,128,0.08);
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0 8px;
+  transition: background 0.15s, color 0.15s;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  font-family: inherit;
+  user-select: none;
+}
+.oc-bar-chip:hover {
+  background: rgba(128,128,128,0.18);
+  color: var(--text-muted);
+}
+.oc-bar-chip-active {
+  background: rgba(128,128,128,0.18);
+  color: var(--text-normal);
+}
+.oc-bar-chip-active:hover {
+  background: rgba(128,128,128,0.25);
+}
+
 .openclaw-attach-btn {
   width: 28px;
   height: 28px;
