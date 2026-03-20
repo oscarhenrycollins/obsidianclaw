@@ -23,6 +23,85 @@ function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
 }
 
+/** Create an SVG element from attributes (avoids innerHTML for ObsidianReviewBot compliance). */
+function createSvgIcon(parent: HTMLElement, svgSpec: { width: number; height: number; viewBox: string; children: Array<{ tag: string; attrs: Record<string, string> }> }, attrs?: Record<string, string>): SVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", String(svgSpec.width));
+  svg.setAttribute("height", String(svgSpec.height));
+  svg.setAttribute("viewBox", svgSpec.viewBox);
+  if (attrs) { for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v); }
+  for (const child of svgSpec.children) {
+    const el = document.createElementNS(ns, child.tag);
+    for (const [k, v] of Object.entries(child.attrs)) el.setAttribute(k, v);
+    svg.appendChild(el);
+  }
+  parent.appendChild(svg);
+  return svg;
+}
+
+// SVG icon definitions (reusable constants)
+const SVG_HAMBURGER = {
+  width: 22, height: 22, viewBox: "0 0 24 24",
+  children: [
+    { tag: "line", attrs: { x1: "3", y1: "6", x2: "21", y2: "6", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" } },
+    { tag: "line", attrs: { x1: "3", y1: "12", x2: "21", y2: "12", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" } },
+    { tag: "line", attrs: { x1: "3", y1: "18", x2: "21", y2: "18", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round" } },
+  ],
+};
+
+const SVG_CHEVRON_LEFT = {
+  width: 16, height: 16, viewBox: "0 0 24 24",
+  children: [
+    { tag: "polyline", attrs: { points: "15 18 9 12 15 6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+  ],
+};
+
+const SVG_CHEVRON_RIGHT = {
+  width: 16, height: 16, viewBox: "0 0 24 24",
+  children: [
+    { tag: "polyline", attrs: { points: "9 18 15 12 9 6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+  ],
+};
+
+const SVG_HOME_16 = {
+  width: 16, height: 16, viewBox: "0 0 24 24",
+  children: [
+    { tag: "path", attrs: { d: "M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z", fill: "currentColor" } },
+  ],
+};
+
+const SVG_HOME_18 = {
+  width: 18, height: 18, viewBox: "0 0 24 24",
+  children: [
+    { tag: "path", attrs: { d: "M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z", fill: "currentColor" } },
+  ],
+};
+
+const SVG_RESET_10 = {
+  width: 10, height: 10, viewBox: "0 0 24 24",
+  children: [
+    { tag: "path", attrs: { d: "M1 4v6h6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+    { tag: "path", attrs: { d: "M3.51 15a9 9 0 105.64-12.28L1 10", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+  ],
+};
+
+const SVG_RESET_11 = {
+  width: 11, height: 11, viewBox: "0 0 24 24",
+  children: [
+    { tag: "path", attrs: { d: "M1 4v6h6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+    { tag: "path", attrs: { d: "M3.51 15a9 9 0 105.64-12.28L1 10", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+  ],
+};
+
+const SVG_RESET_12 = {
+  width: 12, height: 12, viewBox: "0 0 24 24",
+  children: [
+    { tag: "path", attrs: { d: "M1 4v6h6", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+    { tag: "path", attrs: { d: "M3.51 15a9 9 0 105.64-12.28L1 10", fill: "none", stroke: "currentColor", "stroke-width": "2.5", "stroke-linecap": "round", "stroke-linejoin": "round" } },
+  ],
+};
+
 interface AgentInfo {
   id: string;
   name: string;
@@ -1279,12 +1358,12 @@ class OpenClawChatView extends ItemView {
 
     // Hamburger button
     const hamburgerBtn = this.hamburgerBarEl.createEl("button", { cls: "oc-hamburger-btn" });
-    hamburgerBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+    createSvgIcon(hamburgerBtn, SVG_HAMBURGER);
 
     // Tab switcher
     const tabSwitcher = this.hamburgerBarEl.createDiv("oc-tab-switcher");
     this.tabArrowLeftEl = tabSwitcher.createEl("button", { cls: "oc-tab-switcher-arrow oc-arrow-left" });
-    this.tabArrowLeftEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+    createSvgIcon(this.tabArrowLeftEl, SVG_CHEVRON_LEFT);
     const switcherCurrent = tabSwitcher.createDiv("oc-tab-switcher-current");
     const switcherRow = switcherCurrent.createDiv("oc-tab-switcher-row");
     this.tabSwitcherLabelEl = switcherRow.createSpan("oc-tab-switcher-label");
@@ -1293,7 +1372,7 @@ class OpenClawChatView extends ItemView {
     const switcherMeter = switcherCurrent.createDiv("oc-tab-switcher-meter");
     this.tabSwitcherMeterFillEl = switcherMeter.createDiv("oc-tab-switcher-meter-fill");
     this.tabArrowRightEl = tabSwitcher.createEl("button", { cls: "oc-tab-switcher-arrow oc-arrow-right" });
-    this.tabArrowRightEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+    createSvgIcon(this.tabArrowRightEl, SVG_CHEVRON_RIGHT);
 
     // Hamburger dropdown
     this.hamburgerDropdownEl2 = this.hamburgerBarEl.createDiv("oc-hamburger-dropdown");
@@ -1463,7 +1542,7 @@ class OpenClawChatView extends ItemView {
     // 1. Capacitor Keyboard.setResizeMode('native') — makes webview shrink with keyboard
     // 2. Hide Obsidian's bottom drawer elements when keyboard is open — they waste ~120px
     try {
-      const cap = (window as any).Capacitor;
+      const cap = (window as unknown as Record<string, unknown>).Capacitor as Record<string, Record<string, Record<string, CallableFunction>>> | undefined;
       if (cap?.Plugins?.Keyboard) {
         const kb = cap.Plugins.Keyboard;
 
@@ -1471,8 +1550,8 @@ class OpenClawChatView extends ItemView {
         await kb.setResizeMode?.({ mode: 'native' });
 
         // Find bottom drawer siblings that waste space
-        const drawerInner = container.closest('.workspace-drawer-inner') as HTMLElement | null;
-        const tabContainer = drawerInner?.querySelector('.workspace-drawer-tab-container') as HTMLElement | null;
+        const drawerInner = container.closest<HTMLElement>('.workspace-drawer-inner');
+        const tabContainer = drawerInner?.querySelector<HTMLElement>('.workspace-drawer-tab-container') ?? null;
         let hiddenSiblings: HTMLElement[] = [];
 
         const onKeyboardShow = () => {
@@ -1480,19 +1559,19 @@ class OpenClawChatView extends ItemView {
           // Hide all siblings of workspace-drawer-tab-container (tab dots, bottom panes)
           hiddenSiblings = [];
           for (const child of Array.from(drawerInner.children) as HTMLElement[]) {
-            if (child !== tabContainer && child.style.display !== 'none') {
+            if (child !== tabContainer && !child.hasClass("oc-hidden")) {
               hiddenSiblings.push(child);
-              child.style.display = 'none';
+              child.addClass("oc-hidden");
             }
           }
           // Also hide tab header within the tab container (the "Plugin" header bar)
-          const activeTabContainer = tabContainer.querySelector('.workspace-drawer-active-tab-container') as HTMLElement | null;
+          const activeTabContainer = tabContainer.querySelector<HTMLElement>('.workspace-drawer-active-tab-container');
           if (activeTabContainer) {
             for (const child of Array.from(activeTabContainer.children) as HTMLElement[]) {
               const isContent = child.classList.contains('workspace-drawer-active-tab-content');
-              if (!isContent && child.style.display !== 'none') {
+              if (!isContent && !child.hasClass("oc-hidden")) {
                 hiddenSiblings.push(child);
-                child.style.display = 'none';
+                child.addClass("oc-hidden");
               }
             }
           }
@@ -1501,7 +1580,7 @@ class OpenClawChatView extends ItemView {
         const onKeyboardHide = () => {
           // Restore hidden siblings
           for (const el of hiddenSiblings) {
-            el.style.display = '';
+            el.removeClass("oc-hidden");
           }
           hiddenSiblings = [];
         };
@@ -1520,7 +1599,7 @@ class OpenClawChatView extends ItemView {
           window.removeEventListener('keyboardDidHide', onKeyboardHide);
         });
       }
-    } catch (_) { /* not on mobile / Capacitor not available */ }
+    } catch { /* not on mobile / Capacitor not available */ }
     
     // Init touch gestures for mobile
     this.initTouchGestures();
@@ -1570,7 +1649,7 @@ class OpenClawChatView extends ItemView {
 
     const opt1Label = this.pairingBannerEl.createEl("p", { text: "Run on the server:", cls: "openclaw-pairing-option-label" });
     const copyBox = opt1Label.parentElement!.createDiv("openclaw-pairing-copy-box");
-    const codeEl = copyBox.createEl("code", { text: "openclaw devices approve --latest" });
+    copyBox.createEl("code", { text: "openclaw devices approve --latest" });
     const copyBtn = copyBox.createSpan("openclaw-pairing-copy-btn");
     copyBtn.textContent = "Copy";
     copyBox.addEventListener("click", () => {
@@ -2124,14 +2203,15 @@ class OpenClawChatView extends ItemView {
 
     // Label
     if (isHome) {
-      this.tabSwitcherLabelEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
+      this.tabSwitcherLabelEl.empty();
+      createSvgIcon(this.tabSwitcherLabelEl, SVG_HOME_16, { style: "vertical-align:-3px;opacity:0.7" });
       this.tabSwitcherLabelEl.title = "";
-      this.tabSwitcherLabelEl.style.cursor = "";
+      this.tabSwitcherLabelEl.removeClass("oc-cursor-default");
       this.tabSwitcherLabelEl.ondblclick = null;
     } else {
       this.tabSwitcherLabelEl.textContent = current.label;
       this.tabSwitcherLabelEl.title = "Double-click to rename";
-      this.tabSwitcherLabelEl.style.cursor = "default";
+      this.tabSwitcherLabelEl.addClass("oc-cursor-default");
       this.tabSwitcherLabelEl.ondblclick = (e: MouseEvent) => {
         e.stopPropagation();
         this.startSwitcherRename(current);
@@ -2139,13 +2219,11 @@ class OpenClawChatView extends ItemView {
     }
 
     // Meter
-    this.tabSwitcherMeterFillEl.style.width = (current.pct || 0) + "%";
+    this.tabSwitcherMeterFillEl.setCssProps({ "--oc-meter-width": (current.pct || 0) + "%" });
 
     // Arrows (invisible spacers when at boundaries)
-    this.tabArrowLeftEl.style.visibility = idx <= 0 ? "hidden" : "visible";
-    this.tabArrowLeftEl.style.pointerEvents = idx <= 0 ? "none" : "auto";
-    this.tabArrowRightEl.style.visibility = idx >= this.tabSessions.length - 1 ? "hidden" : "visible";
-    this.tabArrowRightEl.style.pointerEvents = idx >= this.tabSessions.length - 1 ? "none" : "auto";
+    this.tabArrowLeftEl.toggleClass("oc-visibility-hidden", idx <= 0);
+    this.tabArrowRightEl.toggleClass("oc-visibility-hidden", idx >= this.tabSessions.length - 1);
 
     // Actions
     this.tabSwitcherActionsEl.empty();
@@ -2153,16 +2231,15 @@ class OpenClawChatView extends ItemView {
     // Reset button
     const resetBtn = this.tabSwitcherActionsEl.createEl("button", { cls: "oc-tab-switcher-action" });
     resetBtn.title = "Reset conversation";
-    resetBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+    createSvgIcon(resetBtn, SVG_RESET_10);
     resetBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       void this.resetTabAction(current);
     });
 
     // Close button (real for non-home, invisible spacer for home)
-    const closeBtn = this.tabSwitcherActionsEl.createEl("button", { cls: "oc-tab-switcher-action" });
+    const closeBtn = this.tabSwitcherActionsEl.createEl("button", { cls: "oc-tab-switcher-action oc-font-13" });
     closeBtn.textContent = "×";
-    closeBtn.style.fontSize = "13px";
     if (!isHome) {
       closeBtn.title = "Close tab";
       closeBtn.addEventListener("click", (e) => {
@@ -2170,8 +2247,7 @@ class OpenClawChatView extends ItemView {
         void this.closeTabAction(current);
       });
     } else {
-      closeBtn.style.visibility = "hidden";
-      closeBtn.style.pointerEvents = "none";
+      closeBtn.addClass("oc-visibility-hidden");
     }
   }
 
@@ -2220,7 +2296,8 @@ class OpenClawChatView extends ItemView {
       // Label
       const label = item.createSpan({ cls: "oc-dd-label" });
       if (isHome) {
-        label.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;opacity:0.7"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg> Home';
+        createSvgIcon(label, SVG_HOME_16, { style: "vertical-align:-3px;opacity:0.7" });
+        label.appendText(" Home");
       } else {
         label.textContent = tab.label;
         label.title = "Double-click to rename";
@@ -2233,14 +2310,14 @@ class OpenClawChatView extends ItemView {
       // Context meter
       const meter = item.createDiv({ cls: "oc-dd-meter" });
       const fill = meter.createDiv({ cls: "oc-dd-meter-fill" });
-      fill.style.width = tab.pct + "%";
+      fill.setCssProps({ "--oc-meter-width": tab.pct + "%" });
 
       // Actions
       const actions = item.createSpan({ cls: "oc-dd-actions" });
 
       // Reset
       const resetBtn = actions.createSpan({ cls: "oc-dd-action-btn" });
-      resetBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+      createSvgIcon(resetBtn, SVG_RESET_12);
       resetBtn.title = "Reset conversation";
       resetBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2258,8 +2335,7 @@ class OpenClawChatView extends ItemView {
           void this.closeTabAction(tab);
         });
       } else {
-        const spacer = actions.createSpan({ text: "×", cls: "oc-dd-action-btn" });
-        spacer.style.visibility = "hidden";
+        actions.createSpan({ text: "×", cls: "oc-dd-action-btn oc-visibility-hidden" });
       }
 
       // Click to switch
@@ -2270,10 +2346,7 @@ class OpenClawChatView extends ItemView {
     }
 
     // + New Tab
-    const addItem = this.hamburgerDropdownEl2.createDiv({ cls: "oc-hamburger-dropdown-item" });
-    addItem.style.justifyContent = "center";
-    addItem.style.color = "var(--text-muted)";
-    addItem.style.opacity = "0.7";
+    const addItem = this.hamburgerDropdownEl2.createDiv({ cls: "oc-hamburger-dropdown-item oc-justify-center oc-text-muted oc-opacity-07" });
     addItem.createSpan({ text: "+ New Tab" });
     addItem.addEventListener("click", () => {
       this.hamburgerDropdownEl2.removeClass("oc-open");
@@ -2318,8 +2391,7 @@ class OpenClawChatView extends ItemView {
       // Show loading indicator
       if (this.isMobileMode && this.tabSwitcherLabelEl) {
         this.tabSwitcherLabelEl.empty();
-        const spinner = this.tabSwitcherLabelEl.createSpan({ cls: "oc-tab-loading-spinner" });
-        spinner.innerHTML = "⟳";
+        this.tabSwitcherLabelEl.createSpan({ cls: "oc-tab-loading-spinner", text: "⟳" });
         this.tabSwitcherLabelEl.createSpan({ text: " Loading..." });
       }
       this.streamEl = null;
@@ -2498,7 +2570,7 @@ class OpenClawChatView extends ItemView {
 
       if (isHome) {
         // Home tab: house icon only, non-renameable
-        labelSpan.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z"/></svg>';
+        createSvgIcon(labelSpan, SVG_HOME_18, { style: "vertical-align:-3px" });
       } else {
         labelSpan.textContent = tab.label;
         // Double-click to rename (non-Home tabs only)
@@ -2538,7 +2610,7 @@ class OpenClawChatView extends ItemView {
       // Action button: Home gets refresh icon, others get ×
       if (isHome) {
         const resetBtn = row.createSpan({ cls: "openclaw-tab-close" });
-        resetBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+        createSvgIcon(resetBtn, SVG_RESET_11, { style: "vertical-align:-1px" });
         resetBtn.title = "Reset conversation";
         resetBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected) return;
@@ -2568,7 +2640,7 @@ class OpenClawChatView extends ItemView {
       } else {
         // Other tabs: reset button (↻) + close button (×)
         const tabResetBtn = row.createSpan({ cls: "openclaw-tab-close openclaw-tab-reset" });
-        tabResetBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.64-12.28L1 10"/></svg>';
+        createSvgIcon(tabResetBtn, SVG_RESET_10, { style: "vertical-align:-1px" });
         tabResetBtn.title = "Reset conversation";
         tabResetBtn.addEventListener("click", (e) => { e.stopPropagation(); void (async () => {
           if (!this.plugin.gateway?.connected) return;
@@ -2751,12 +2823,10 @@ class OpenClawChatView extends ItemView {
   // ─── Touch gestures ──────────────────────────────────────────────
 
   private initTouchGestures(): void {
-    let touchStartX = 0;
     let touchStartY = 0;
     let pulling = false;
 
     this.messagesEl.addEventListener("touchstart", (e: TouchEvent) => {
-      touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
       pulling = false;
     }, { passive: true });
@@ -2768,10 +2838,7 @@ class OpenClawChatView extends ItemView {
       }
     }, { passive: true });
 
-    this.messagesEl.addEventListener("touchend", (e: TouchEvent) => {
-      const deltaX = e.changedTouches[0].clientX - touchStartX;
-      const deltaY = e.changedTouches[0].clientY - touchStartY;
-
+    this.messagesEl.addEventListener("touchend", () => {
       // Pull-to-refresh
       if (pulling) {
         pulling = false;
@@ -2779,12 +2846,6 @@ class OpenClawChatView extends ItemView {
         this.messagesEl.empty();
         void this.loadHistory().then(() => this.updateContextMeter());
         new Notice("Refreshed");
-        return;
-      }
-
-      // Swipe between tabs removed — conflicts with Obsidian's native panel swiping.
-      // Users can use hamburger menu or arrow buttons to switch tabs.
-      if (false) {
       }
     }, { passive: true });
   }

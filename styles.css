@@ -7,6 +7,12 @@
 .oc-inline { display: inline; }
 .oc-inline-block { display: inline-block; }
 .oc-opacity-low { opacity: 0.3; }
+.oc-visibility-hidden { visibility: hidden; pointer-events: none; }
+.oc-cursor-default { cursor: default; }
+.oc-font-13 { font-size: 13px; }
+.oc-justify-center { justify-content: center; }
+.oc-text-muted { color: var(--text-muted); }
+.oc-opacity-07 { opacity: 0.7; }
 
 /* Onboarding inline style replacements */
 .oc-req-label { font-size: 11px; color: var(--text-muted); }
@@ -388,7 +394,7 @@
   background: var(--text-normal);
   opacity: 0.5;
   transition: width 0.5s ease;
-  width: 0%;
+  width: var(--oc-meter-width, 0%);
 }
 
 /* Tab loading spinner */
@@ -472,6 +478,7 @@
   border-radius: 1.5px;
   background: var(--text-normal);
   opacity: 0.6;
+  width: var(--oc-meter-width, 0%);
 }
 .oc-dd-actions {
   display: flex;
