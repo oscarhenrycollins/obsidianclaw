@@ -1229,8 +1229,11 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
       this.plugin.settings.sessionKey = "main";
       await this.plugin.saveSettings();
       this.close();
-      if (!this.plugin.gatewayConnected) void this.plugin.connectGateway();
-      void this.plugin.activateView();
+      // Force reconnect (picks up new URL/token) and sync the chat view
+      void this.plugin.connectGateway();
+      void this.plugin.activateView().then(() => {
+        this.plugin.chatView?.syncFromSettings();
+      });
     })());
   }
 
@@ -1627,6 +1630,7 @@ class OpenClawChatView extends ItemView {
     if (this.plugin.gatewayConnected) {
       await this.loadHistory();
       void this.loadAgents();
+      void this.loadDefaults();
     }
   }
 
@@ -1634,6 +1638,17 @@ class OpenClawChatView extends ItemView {
     if (this.plugin.chatView === this) {
       this.plugin.chatView = null;
     }
+  }
+
+  /** Reload the chat view when settings change externally (e.g. onboarding, settings tab) */
+  syncFromSettings(): void {
+    this.messages = [];
+    this.messagesEl.empty();
+    this.streamEl = null;
+    void this.loadHistory();
+    void this.renderTabs();
+    void this.updateContextMeter();
+    this.updateStatus();
   }
 
   updateStatus(): void {
@@ -1734,6 +1749,27 @@ class OpenClawChatView extends ItemView {
       this.updateAgentButton();
     } catch (e) {
       console.warn("[ObsidianClaw] Failed to load agents:", e);
+    }
+  }
+
+  /** Load agent defaults (thinking/verbose) from gateway config */
+  async loadDefaults(): Promise<void> {
+    if (!this.plugin.gateway?.connected) return;
+    try {
+      const result = await this.plugin.gateway.request("config.get", {});
+      const raw = result as Record<string, unknown> | null;
+      const cfg = (raw?.config || raw || {}) as Record<string, unknown>;
+      let parsed: Record<string, unknown> = cfg;
+      if (raw && typeof raw.raw === "string") {
+        try { parsed = JSON.parse(raw.raw) as Record<string, unknown>; } catch { /* use cfg */ }
+      }
+      const agents = parsed?.agents as Record<string, unknown> | undefined;
+      const ad = (agents?.defaults || {}) as Record<string, unknown>;
+      this.thinkingDefault = str(ad?.thinkingDefault);
+      this.verboseDefault = str(ad?.verboseDefault);
+      this.updateBarControls();
+    } catch {
+      // config.get may not be available on all gateway versions
     }
   }
 
@@ -3881,6 +3917,7 @@ export default class OpenClawPlugin extends Plugin {
         void this.chatView?.loadHistory();
         void this.chatView?.renderTabs();
         void this.chatView?.loadAgents();
+        void this.chatView?.loadDefaults();
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
           this.chatView.currentModel = this.settings.currentModel;
@@ -4294,6 +4331,7 @@ class OpenClawSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.sessionKey = value || "main";
             await this.plugin.saveSettings();
+            this.plugin.chatView?.syncFromSettings();
           })
       )
       .addButton((btn) =>
@@ -4303,7 +4341,7 @@ class OpenClawSettingTab extends PluginSettingTab {
             this.plugin.settings.sessionKey = "main";
             await this.plugin.saveSettings();
             this.display(); // refresh the settings UI
-            await this.plugin.connectGateway();
+            this.plugin.chatView?.syncFromSettings();
             new Notice("Reset to main conversation");
           })
       );
