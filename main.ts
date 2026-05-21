@@ -444,16 +444,22 @@ class GatewayClient {
       return;
     }
 
-    this.ws = new WebSocket(url);
-    this.ws.addEventListener("open", () => this.queueConnect());
-    this.ws.addEventListener("message", (e) => this.handleMessage(str(e.data)));
-    this.ws.addEventListener("close", (e) => {
+    // Electron's WebSocket accepts a headers map in the third parameter.
+    // Set Origin to app://obsidian.md (standard Obsidian Electron origin) so
+    // gateway v4 origin validation passes.
+    // Use Reflect.construct to bypass the TypeScript constructor signature check
+    // (standard lib only knows the 1-2 arg WebSocket signature).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.ws = Reflect.construct(WebSocket, [url, "", { headers: { "Origin": "app://obsidian.md" } }]) as any;
+    (this.ws as any).addEventListener("open", () => this.queueConnect());
+    (this.ws as any).addEventListener("message", (e: MessageEvent) => this.handleMessage(str(e.data)));
+    (this.ws as any).addEventListener("close", (e: CloseEvent) => {
       this.ws = null;
       this.flushPending(new Error(`closed (${e.code})`));
       this.opts.onClose?.({ code: e.code, reason: e.reason || "" });
       this.scheduleReconnect();
     });
-    this.ws.addEventListener("error", () => {});
+    (this.ws as any).addEventListener("error", () => {});
   }
 
   private scheduleReconnect(): void {
