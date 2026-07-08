@@ -190,7 +190,7 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 
 - [x] **H1 — Stop piping the gateway patch script into `sudo bash`.** Provide a checksum-verified install path or replace it with a manual patching guide / upstream fix.
 - [x] **H2 — Validate gateway-controlled URLs before opening them externally.** Only allow `http://`/`https://` schemes; reject `javascript:`, `data:`, and custom schemes.
-- [ ] **H3 — Clarify credential/key storage in `SECURITY.md`.** The token and Ed25519 private key live in the vault’s `.obsidian/plugins/openclaw/data.json` and are synced with Obsidian Sync; update claims that they “never leave your machine.”
+- [x] **H3 — Clarify credential/key storage in `SECURITY.md`.** The token and Ed25519 private key live in the vault’s `.obsidian/plugins/openclaw/data.json` and are synced with Obsidian Sync; update claims that they “never leave your machine.”
 
 ### 🟡 Medium
 

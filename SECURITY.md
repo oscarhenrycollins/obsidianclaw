@@ -61,9 +61,15 @@ OcO Plugin  ←→  localhost / private tunnel  ←→  OpenClaw Gateway
 ```
 
 ### What stays local to Obsidian:
-- Your private key (never transmitted)
 - Plugin settings
 - Vault contents (only sent when you explicitly use "Ask about this note")
+
+### What is stored inside the vault (`.obsidian/plugins/openclaw/data.json`):
+- **Auth token**
+- **Ed25519 private key** and public key
+- Gateway URL
+
+Because these values live in the vault's plugin data directory, they are included in **Obsidian Sync**, manual vault backups, and any other sync/copy mechanism that covers the vault. They are **not encrypted at rest** by the plugin. Keep this in mind when enabling sync or sharing vault backups.
 
 ### What's sent to the gateway:
 - Auth token (for authentication)
