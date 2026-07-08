@@ -58,6 +58,7 @@ class ConfirmCloseModal extends Modal {
   private message: string
   private callback: (result: boolean, dontAsk: boolean) => void
   private checkboxEl!: HTMLInputElement
+  private resolved = false
 
   constructor(
     app: App,
@@ -97,7 +98,7 @@ class ConfirmCloseModal extends Modal {
       cls: 'openclaw-confirm-cancel',
     })
     cancelBtn.addEventListener('click', () => {
-      this.callback(false, false)
+      this.resolve(false, false)
       this.close()
     })
     const confirmBtn = btnRow.createEl('button', {
@@ -105,13 +106,21 @@ class ConfirmCloseModal extends Modal {
       cls: 'openclaw-confirm-ok',
     })
     confirmBtn.addEventListener('click', () => {
-      this.callback(true, this.checkboxEl.checked)
+      this.resolve(true, this.checkboxEl.checked)
       this.close()
     })
   }
 
+  private resolve(result: boolean, dontAsk: boolean): void {
+    if (this.resolved) return
+    this.resolved = true
+    this.callback(result, dontAsk)
+  }
+
   onClose(): void {
     this.contentEl.empty()
+    // Escape or overlay click = cancel
+    this.resolve(false, false)
   }
 }
 
