@@ -225,9 +225,6 @@ export class OpenClawChatView extends ItemView {
     token?: string
   }[] = []
   private sending = false
-  private recording = false
-  private mediaRecorder: MediaRecorder | null = null
-  private recordedChunks: Blob[] = []
 
   private bannerEl!: HTMLElement
 
@@ -481,7 +478,6 @@ export class OpenClawChatView extends ItemView {
       if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
         void this.sendMessage()
       }
-      // Voice recording disabled - base64 in message text bloats context
     })
     this.abortBtn.addEventListener('click', () => void this.abortMessage())
 
@@ -870,120 +866,6 @@ export class OpenClawChatView extends ItemView {
     } else {
       this.sendBtn.setAttribute('aria-label', 'Send')
       this.sendBtn.addClass('oc-opacity-low')
-    }
-  }
-
-  private async startRecording(): Promise<void> {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      this.recordedChunks = []
-
-      // Try opus first, fall back to default
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : ''
-
-      this.mediaRecorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : {}
-      )
-      this.mediaRecorder.addEventListener('dataavailable', (e) => {
-        if (e.data.size > 0) this.recordedChunks.push(e.data)
-      })
-      this.mediaRecorder.addEventListener('stop', () => {
-        stream.getTracks().forEach((t) => t.stop())
-        void this.finishRecording()
-      })
-
-      this.mediaRecorder.start()
-      this.recording = true
-      this.updateSendButton()
-      this.inputEl.placeholder = 'Recording... tap ■ to stop'
-    } catch (e) {
-      console.error('[OcO] Mic access failed:', e)
-      new Notice('Microphone access denied')
-    }
-  }
-
-  private stopRecording(): void {
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop()
-    }
-    this.recording = false
-    this.updateSendButton()
-    this.inputEl.placeholder = 'Message...'
-  }
-
-  private async finishRecording(): Promise<void> {
-    if (this.recordedChunks.length === 0) return
-    const blob = new Blob(this.recordedChunks, {
-      type: this.mediaRecorder?.mimeType || 'audio/webm',
-    })
-    this.recordedChunks = []
-
-    // Convert to base64
-    const arrayBuf = await blob.arrayBuffer()
-    const bytes = new Uint8Array(arrayBuf)
-    let binary = ''
-    for (let i = 0; i < bytes.length; i++)
-      binary += String.fromCharCode(bytes[i])
-    const b64 = btoa(binary)
-    const mime = blob.type || 'audio/webm'
-
-    // Upload to gateway static dir via the agent (exec), and send VOICE: ref
-    // For now: send as AUDIO_DATA in message text, agent handles transcription
-    const marker = `AUDIO_DATA:${mime};base64,${b64}`
-
-    // Show voice message in local UI
-    this.messages.push({
-      role: 'user',
-      text: '🎤 Voice message',
-      images: [],
-      timestamp: Date.now(),
-    })
-    await this.renderMessages()
-
-    // Send to gateway
-    const runId = generateId()
-    const sendSessionKey = this.activeSessionKey
-    const ss = {
-      runId,
-      text: '' as string | null,
-      toolCalls: [] as string[],
-      items: [] as StreamItem[],
-      splitPoints: [] as number[],
-      lastDeltaTime: 0,
-      compactTimer: null as number | null,
-      workingTimer: null as number | null,
-    }
-    this.streams.set(sendSessionKey, ss)
-    this.runToSession.set(runId, sendSessionKey)
-    this.abortBtn.removeClass('oc-hidden')
-    this.typingEl.removeClass('oc-hidden')
-    const thinkText = this.typingEl.querySelector('.openclaw-typing-text')
-    if (thinkText) thinkText.textContent = 'Thinking'
-    this.scrollToBottom()
-
-    try {
-      await this.plugin.gateway!.request('chat.send', {
-        sessionKey: sendSessionKey,
-        message: marker,
-        deliver: false,
-        idempotencyKey: runId,
-      })
-    } catch (e) {
-      this.messages.push({
-        role: 'assistant',
-        text: `Error: ${e}`,
-        images: [],
-        timestamp: Date.now(),
-      })
-      this.streams.delete(sendSessionKey)
-      this.runToSession.delete(runId)
-      this.abortBtn.addClass('oc-hidden')
-      await this.renderMessages()
     }
   }
 
@@ -1396,14 +1278,32 @@ export class OpenClawChatView extends ItemView {
         deliver: false,
         idempotencyKey: 'newtab-' + Date.now(),
       })
+      await new Promise((r) => window.setTimeout(r, 500))
+      try {
+        await this.plugin.gateway?.request('sessions.patch', {
+          key: `${this.agentPrefix}${sessionKey}`,
+          label: 'Untitled',
+        })
+      } catch {
+        /* label optional */
+      }
+      // Switch to it - clear old tab's stream UI
+      this.streamEl = null
+      this.typingEl.addClass('oc-hidden')
+      this.abortBtn.addClass('oc-hidden')
+      this.hideBanner()
+
       this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
+      if (this.plugin.settings.streamItemsMap)
+        this.plugin.settings.streamItemsMap = {}
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
       await this.renderTabs()
-      new Notice('New tab created')
+      await this.updateContextMeter()
+      new Notice('New tab')
     } catch (err: unknown) {
-      new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+      new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -1552,43 +1452,14 @@ export class OpenClawChatView extends ItemView {
       }
       row.appendChild(labelSpan)
 
-      // Action button: Home gets refresh icon, others get ×
+      // Action button: Home gets refresh icon, others get reset + close
       if (isHome) {
         const resetBtn = row.createSpan({ cls: 'openclaw-tab-close' })
         createSvgIcon(resetBtn, SVG_RESET_11, { style: 'vertical-align:-1px' })
         resetBtn.title = 'Reset conversation'
         resetBtn.addEventListener('click', (e) => {
           e.stopPropagation()
-          void (async () => {
-            if (!this.plugin.gateway?.connected) return
-            // Confirm before reset
-            if (!this.isCloseConfirmDisabled()) {
-              const confirmed = await this.confirmTabClose(
-                'Reset Home tab?',
-                'This will clear the conversation.'
-              )
-              if (!confirmed) return
-            }
-            try {
-              await this.plugin.gateway.request('chat.send', {
-                sessionKey: tab.key,
-                message: '/reset',
-                deliver: false,
-                idempotencyKey: 'reset-' + Date.now(),
-              })
-              new Notice('Home tab reset')
-              if (tab.key === currentKey) {
-                this.messages = []
-                this.messagesEl.empty()
-              }
-              await this.updateContextMeter()
-              await this.renderTabs()
-            } catch (err: unknown) {
-              new Notice(
-                `Reset failed: ${err instanceof Error ? err.message : String(err)}`
-              )
-            }
-          })()
+          void this.resetTabAction(tab)
         })
       } else {
         // Other tabs: reset button (↻) + close button (×)
@@ -1601,35 +1472,7 @@ export class OpenClawChatView extends ItemView {
         tabResetBtn.title = 'Reset conversation'
         tabResetBtn.addEventListener('click', (e) => {
           e.stopPropagation()
-          void (async () => {
-            if (!this.plugin.gateway?.connected) return
-            if (!this.isCloseConfirmDisabled()) {
-              const confirmed = await this.confirmTabClose(
-                `Reset "${tab.label}"?`,
-                'This will clear the conversation.'
-              )
-              if (!confirmed) return
-            }
-            try {
-              await this.plugin.gateway.request('chat.send', {
-                sessionKey: tab.key,
-                message: '/reset',
-                deliver: false,
-                idempotencyKey: 'reset-' + Date.now(),
-              })
-              new Notice(`Reset: ${tab.label}`)
-              if (tab.key === currentKey) {
-                this.messages = []
-                this.messagesEl.empty()
-              }
-              await this.updateContextMeter()
-              await this.renderTabs()
-            } catch (err: unknown) {
-              new Notice(
-                `Reset failed: ${err instanceof Error ? err.message : String(err)}`
-              )
-            }
-          })()
+          void this.resetTabAction(tab)
         })
 
         const tabCloseBtn = row.createSpan({
@@ -1639,45 +1482,7 @@ export class OpenClawChatView extends ItemView {
         tabCloseBtn.title = 'Close tab'
         tabCloseBtn.addEventListener('click', (e) => {
           e.stopPropagation()
-          void (async () => {
-            if (!this.plugin.gateway?.connected || this.tabDeleteInProgress)
-              return
-            if (!this.isCloseConfirmDisabled()) {
-              const confirmed = await this.confirmTabClose(
-                'Close tab?',
-                `Close "${tab.label}"? Chat history will be lost.`
-              )
-              if (!confirmed) return
-            }
-            this.tabDeleteInProgress = true
-            try {
-              const deleted = await deleteSessionWithFallback(
-                this.plugin.gateway,
-                `${this.agentPrefix}${tab.key}`
-              )
-              new Notice(
-                deleted
-                  ? `Closed: ${tab.label}`
-                  : `Could not delete: ${tab.label}`
-              )
-            } catch (err: unknown) {
-              new Notice(
-                `Close failed: ${err instanceof Error ? err.message : String(err)}`
-              )
-            }
-            this.finishStream(tab.key)
-            if (tab.key === currentKey) {
-              this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
-              await this.plugin.saveSettings()
-              this.messages = []
-              this.messagesEl.empty()
-              await this.loadHistory()
-              this.restoreStreamUI()
-            }
-            this.tabDeleteInProgress = false
-            await this.renderTabs()
-            await this.updateContextMeter()
-          })()
+          void this.closeTabAction(tab)
         })
       }
 
@@ -1720,31 +1525,7 @@ export class OpenClawChatView extends ItemView {
 
       // Click to switch
       if (!isCurrent) {
-        tabEl.addEventListener(
-          'click',
-          () =>
-            void (async () => {
-              // Clear DOM from old tab
-              this.streamEl = null
-              this.typingEl.addClass('oc-hidden')
-              this.abortBtn.addClass('oc-hidden')
-              this.hideBanner()
-
-              this.sessionKey = tab.key; this.plugin.settings.sessionKey = tab.key
-              await this.plugin.saveSettings()
-              this.messages = []
-              this.messagesEl.empty()
-              this.cachedSessionDisplayName = tab.label
-              await this.loadHistory()
-
-              // Restore stream UI if new tab has an active stream
-              this.restoreStreamUI()
-
-              await this.updateContextMeter()
-              void this.renderTabs()
-              this.updateStatus()
-            })()
-        )
+        tabEl.addEventListener('click', () => this.switchToTab(tab))
       }
     }
 
@@ -1753,53 +1534,7 @@ export class OpenClawChatView extends ItemView {
       cls: 'openclaw-tab openclaw-tab-add',
     })
     addBtn.createSpan({ text: '+', cls: 'openclaw-tab-label' })
-    addBtn.addEventListener(
-      'click',
-      () =>
-        void (async () => {
-          // Find next available session key (collision-free, based on keys not labels)
-          const existingKeys = new Set(this.tabSessions.map((t) => t.key))
-          let nextNum = 1
-          while (existingKeys.has(`tab-${nextNum}`)) nextNum++
-          const sessionKey = `tab-${nextNum}`
-          try {
-            await this.plugin.gateway?.request('chat.send', {
-              sessionKey: sessionKey,
-              message: '/new',
-              deliver: false,
-              idempotencyKey: 'newtab-' + Date.now(),
-            })
-            await new Promise((r) => window.setTimeout(r, 500))
-            try {
-              await this.plugin.gateway?.request('sessions.patch', {
-                key: `${this.agentPrefix}${sessionKey}`,
-                label: 'Untitled',
-              })
-            } catch {
-              /* label optional */
-            }
-            // Switch to it - clear old tab's stream UI
-            this.streamEl = null
-            this.typingEl.addClass('oc-hidden')
-            this.abortBtn.addClass('oc-hidden')
-            this.hideBanner()
-
-            this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
-            this.messages = []
-            if (this.plugin.settings.streamItemsMap)
-              this.plugin.settings.streamItemsMap = {}
-            await this.plugin.saveSettings()
-            this.messagesEl.empty()
-            await this.renderTabs()
-            await this.updateContextMeter()
-            new Notice('New tab')
-          } catch (err: unknown) {
-            new Notice(
-              `Failed to create tab: ${err instanceof Error ? err.message : String(err)}`
-            )
-          }
-        })()
-    )
+    addBtn.addEventListener('click', () => void this.createNewTabAction())
 
   }
 
@@ -1868,33 +1603,16 @@ export class OpenClawChatView extends ItemView {
     )
   }
 
-  private contextColor(pct: number): string {
-    if (pct > 80) return '#c44'
-    if (pct > 60) return '#d4a843'
-    if (pct > 30) return '#7a7'
-    return '#5a5'
+  shortModelName(fullId: string): string {
+
+    // "anthropic/claude-opus-4-6" -> "opus-4-6" (selected display)
+    // Strip provider prefix, strip "claude-" prefix for brevity
+    const model = fullId.includes('/') ? fullId.split('/')[1] : fullId
+    return model.replace(/^claude-/, '')
   }
 
-  async resetCurrentTab(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return
-    try {
-      await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.sessionKey || 'main',
-        message: '/reset',
-        deliver: false,
-        idempotencyKey: 'reset-' + Date.now(),
-      })
-      this.messages = []
-      if (this.plugin.settings.streamItemsMap)
-        this.plugin.settings.streamItemsMap = {}
-      await this.plugin.saveSettings()
-      this.messagesEl.empty()
-      await this.updateContextMeter()
-      await this.renderTabs()
-      new Notice('Tab reset')
-    } catch (e) {
-      new Notice(`Reset failed: ${e}`)
-    }
+  openModelPicker(): void {
+    new ModelPickerModal(this.app, this.plugin, this).open()
   }
 
   async reorderTabs(draggedKey: string, targetKey: string): Promise<void> {
@@ -1909,72 +1627,6 @@ export class OpenClawChatView extends ItemView {
     this.plugin.settings.tabOrder = keys
     await this.plugin.saveSettings()
     await this.renderTabs()
-  }
-
-  openModelPicker(): void {
-    new ModelPickerModal(this.app, this.plugin, this).open()
-  }
-
-  async compactSession(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return
-    try {
-      this.showBanner('Compacting context...')
-      await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.sessionKey,
-        message: '/compact',
-        deliver: false,
-        idempotencyKey: 'compact-' + Date.now(),
-      })
-      // Poll context meter to animate the decrease
-      const pollInterval = window.setInterval(
-        () =>
-          void (async () => {
-            await this.updateContextMeter()
-          })(),
-        2000
-      )
-      window.setTimeout(
-        () =>
-          void (async () => {
-            window.clearInterval(pollInterval)
-            this.hideBanner()
-            await this.loadHistory()
-            await this.updateContextMeter()
-          })(),
-        12000
-      )
-    } catch (e) {
-      this.hideBanner()
-      new Notice(`Compact failed: ${e}`)
-    }
-  }
-
-  async newSession(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return
-    try {
-      await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.sessionKey,
-        message: '/new',
-        deliver: false,
-        idempotencyKey: 'new-' + Date.now(),
-      })
-      this.messages = []
-      if (this.plugin.settings.streamItemsMap)
-        this.plugin.settings.streamItemsMap = {}
-      await this.plugin.saveSettings()
-      this.messagesEl.empty()
-      await this.updateContextMeter()
-      new Notice('New session started')
-    } catch (e) {
-      new Notice(`New session failed: ${e}`)
-    }
-  }
-
-  shortModelName(fullId: string): string {
-    // "anthropic/claude-opus-4-6" -> "opus-4-6" (selected display)
-    // Strip provider prefix, strip "claude-" prefix for brevity
-    const model = fullId.includes('/') ? fullId.split('/')[1] : fullId
-    return model.replace(/^claude-/, '')
   }
 
   /** Recompute the @-mention dropdown from the current caret position. */
@@ -2329,11 +1981,6 @@ export class OpenClawChatView extends ItemView {
       const dots = last.querySelector('.openclaw-tool-dots')
       if (dots) dots.remove()
     }
-  }
-
-  private async playTTSAudio(_audioPath: string): Promise<void> {
-    // Local file system access not available in the Obsidian plugin sandbox.
-    // Audio is streamed via gateway HTTP using renderAudioPlayer instead.
   }
 
   private showBanner(text: string): void {

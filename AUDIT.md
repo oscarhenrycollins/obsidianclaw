@@ -201,13 +201,13 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 - [ ] **M5 — Harden `GatewayClient` reconnect behavior.** Store reconnect timer IDs so `stop()` can clear them, surface connection errors in the UI, and cap retry attempts.
 - [ ] **M6 — Add transport-security UI warnings for remote gateway URLs.** Warn when the URL is non-loopback and not `wss://`; default remote hosts to `wss://`.
 - [ ] **M7 — Cap `askAboutNote` content size and trigger input resize.** Avoid inserting arbitrarily large notes and failing to auto-resize the textarea.
-- [ ] **M8 — Refactor `chat-view.ts` and remove dead code.** Deduplicate tab-action logic into the existing private methods and delete unused recording/reset/context methods.
+- [x] **M8 — Refactor `chat-view.ts` and remove dead code.** Deduplicate tab-action logic into the existing private methods and delete unused recording/reset/context methods.
 - [ ] **M9 — Complete or remove `streamItemsMap` persistence.** Either restore persisted stream items on tab switch/view load, or delete the field.
 
 ### 🟢 Low / Informational
 
 - [ ] **L1 — Remove dead exports from `src/modals.ts` and `src/svgs.ts`.** Delete unused modal classes and SVG definitions, or move them to a legacy module.
-- [ ] **L2 — Delete dead voice-recording methods and CSS.** Remove `startRecording`/`stopRecording`/`finishRecording` and related classes.
+- [x] **L2 — Delete dead voice-recording methods and CSS.** Remove `startRecording`/`stopRecording`/`finishRecording` and related classes.
 - [ ] **L3 — Fix double-slash in `buildVoiceUrl`.** Normalize the slash between base URL and `voicePath`.
 - [ ] **L4 — Make `extractContent` / `cleanText` filters safer.** Move gateway-specific stripping to the server, or gate behind explicit markers.
 - [ ] **L5 — Stop hiding the first user message by heuristic in `loadHistory`.** Ask the gateway to omit internal `/new` / `/reset` prompts instead.
