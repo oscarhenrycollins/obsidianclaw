@@ -833,28 +833,7 @@ export class OpenClawChatView extends ItemView {
     text = text
       .replace(/\n?data:image\/[^;]+;base64,[A-Za-z0-9+/=\n]+/g, '')
       .trim()
-    // Strip [Attached image: ...] and "File saved at:" lines
-    text = text.replace(/^\[Attached image:.*?\]\s*/gm, '').trim()
-    text = text.replace(/^File saved at:.*$/gm, '').trim()
-
-    // Strip gateway metadata blocks (Conversation info + JSON code block)
-    text = text
-      .replace(
-        /Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g,
-        ''
-      )
-      .trim()
-    // Strip any remaining standalone metadata JSON blocks
-    text = text
-      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, '')
-      .trim()
-    // Strip timestamp prefixes like "[Sun 2026-02-22 21:58 GMT+7] "
-    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, '').trim()
-    // Strip media attachment lines
-    text = text.replace(/^\[media attached:.*?\]\s*/gm, '').trim()
-    // Strip "To send an image back..." instruction lines
-    text = text.replace(/^To send an image back.*$/gm, '').trim()
-    // Strip "NO_REPLY" responses
+    // Strip "NO_REPLY" / "HEARTBEAT_OK" sentinel responses
     if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') text = ''
     return { text, images }
   }
@@ -2326,24 +2305,11 @@ export class OpenClawChatView extends ItemView {
   }
 
   private cleanText(text: string): string {
-    text = text
-      .replace(
-        /Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g,
-        ''
-      )
-      .trim()
-    text = text
-      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, '')
-      .trim()
-    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, '').trim()
-    text = text.replace(/^\[media attached:.*?\]\s*/gm, '').trim()
-    text = text.replace(/^To send an image back.*$/gm, '').trim()
-    // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
+    // Remove TTS/audio directives and refs that are rendered as audio players.
     text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, '').trim()
-    text = text.replace(/^MEDIA:\/[^\n]+$/gm, '').trim()
+    text = text.replace(/^MEDIA:.*$/gm, '').trim()
     text = text.replace(/^VOICE:[^\s\n]+$/gm, '').trim()
-    // Strip inbound voice data (shown as "🎤 Voice message" in UI)
-    text = text.replace(/^AUDIO_DATA:[^\n]+$/gm, '').trim()
+    text = text.replace(/^AUDIO_DATA:.*$/gm, '').trim()
     if (text === '🎤 Voice message') text = '🎤 Voice message' // keep the label
     if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') return ''
     return text
