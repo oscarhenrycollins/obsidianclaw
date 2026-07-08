@@ -7,6 +7,8 @@
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "lint": "eslint src/**/*.ts --max-warnings=0",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test 'src/**/*.test.ts'",
     "test:watch": "node --import tsx --test --watch \"**/*.test.ts\""
@@ -28,6 +30,7 @@
     "eslint": "^9.39.3",
     "eslint-plugin-obsidianmd": "^0.3.0",
     "obsidian": "latest",
+    "prettier": "^3.5.0",
     "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   }

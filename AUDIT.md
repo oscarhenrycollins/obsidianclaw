@@ -213,7 +213,7 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 - [x] **L5 — Stop hiding the first user message by heuristic in `loadHistory`.** Ask the gateway to omit internal `/new` / `/reset` prompts instead.
 - [x] **L6 — Make the esbuild copy-to-`.obsidian` step opt-in.** Avoid side effects during CI / production builds.
 - [x] **L7 — Consider setting `isDesktopOnly: true` in `manifest.json`.** Mobile requires a remote gateway and the same origin patch.
-- [ ] **L8 — Enforce Prettier in CI.** Install `prettier` and add a format check; align test-file quote style with `.prettierrc`.
+- [x] **L8 — Enforce Prettier in CI.** Install `prettier` and add a format check; align test-file quote style with `.prettierrc`.
 - [ ] **L9 — Review `minAppVersion` for WebCrypto Ed25519 support.** Raise it or surface a notice when device identity creation fails.
 - [ ] **L10 — Cancel the `WelcomeModal` timer in `onunload`.** Prevent detached modals on rapid plugin disable.
 - [ ] **L11 — Update `AGENTS.md` to reflect the existing test suite.** It currently says there is no test suite.

@@ -3,8 +3,8 @@
 // get subtly wrong lives here so it can be tested in isolation.
 
 /** Safely extract a string from an unknown value (avoids [object Object] coercion). */
-export function str(v: unknown, fallback = ""): string {
-  return typeof v === "string" ? v : fallback;
+export function str(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback
 }
 
 /** Best-effort image MIME from a vault file extension (for base64 sends). */
@@ -30,7 +30,10 @@ export function safeGatewayUrl(raw: unknown): string | null {
   try {
     const parsed = new URL(url)
     if (!SAFE_URL_SCHEMES.includes(parsed.protocol)) return null
-    if (parsed.href.split('').some((c) => /\s/.test(c) || c.charCodeAt(0) <= 0x1f)) return null
+    if (
+      parsed.href.split('').some((c) => /\s/.test(c) || c.charCodeAt(0) <= 0x1f)
+    )
+      return null
     return parsed.href
   } catch {
     return null

@@ -23,8 +23,7 @@ export class ModelPickerModal extends Modal {
 
     try {
       const result = (await this.plugin.gateway?.request('models.list', {})) as
-        | { models?: ModelInfo[] }
-        | undefined
+        { models?: ModelInfo[] } | undefined
       this.models = result?.models || []
     } catch {
       this.models = []

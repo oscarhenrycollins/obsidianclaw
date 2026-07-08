@@ -72,4 +72,3 @@ class ConfirmCloseModal extends Modal {
 }
 
 export { ConfirmCloseModal }
-

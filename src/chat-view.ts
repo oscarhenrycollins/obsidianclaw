@@ -19,12 +19,7 @@ import {
   reconcileMentions,
   splitFileBlocks,
 } from './at-mention'
-import {
-  createSvgIcon,
-  SVG_HOME_18,
-  SVG_RESET_10,
-  SVG_RESET_11,
-} from './svgs'
+import { createSvgIcon, SVG_HOME_18, SVG_RESET_10, SVG_RESET_11 } from './svgs'
 import { generateId } from './crypto'
 import { deleteSessionWithFallback } from './gateway-client'
 import { ConfirmCloseModal } from './modals'
@@ -522,7 +517,11 @@ export class OpenClawChatView extends ItemView {
     const error = this.plugin.lastGatewayConnectError
     this.statusEl.setAttribute(
       'title',
-      connected ? 'Connected' : error ? `Disconnected: ${error}` : 'Disconnected'
+      connected
+        ? 'Connected'
+        : error
+          ? `Disconnected: ${error}`
+          : 'Disconnected'
     )
 
     // Swap send button for reconnect when disconnected
@@ -685,7 +684,8 @@ export class OpenClawChatView extends ItemView {
     if (agent.id === this.activeAgent.id) return
     this.activeAgent = agent
     this.plugin.settings.activeAgentId = agent.id
-    this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
+    this.sessionKey = 'main'
+    this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
     await this.plugin.saveSettings()
     this.updateAgentButton()
     await this.loadHistory()
@@ -1048,7 +1048,8 @@ export class OpenClawChatView extends ItemView {
       if ((added || removed) && !this.tabDeleteInProgress) {
         // If viewing a session that no longer exists, switch back to main
         if (removed && !currentSessionKeys.has(`${agentPrefix}${sk}`)) {
-          this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
+          this.sessionKey = 'main'
+          this.plugin.settings.sessionKey = 'main'
           await this.plugin.saveSettings()
           this.messages = []
           this.messagesEl.empty()
@@ -1148,7 +1149,8 @@ export class OpenClawChatView extends ItemView {
       this.typingEl.addClass('oc-hidden')
       this.abortBtn.addClass('oc-hidden')
       this.hideBanner()
-      this.sessionKey = tab.key; this.plugin.settings.sessionKey = tab.key
+      this.sessionKey = tab.key
+      this.plugin.settings.sessionKey = tab.key
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1228,7 +1230,8 @@ export class OpenClawChatView extends ItemView {
     }
     this.finishStream(tab.key)
     if (tab.key === currentKey) {
-      this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
+      this.sessionKey = 'main'
+      this.plugin.settings.sessionKey = 'main'
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1267,7 +1270,8 @@ export class OpenClawChatView extends ItemView {
       this.abortBtn.addClass('oc-hidden')
       this.hideBanner()
 
-      this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
+      this.sessionKey = sessionKey
+      this.plugin.settings.sessionKey = sessionKey
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1275,7 +1279,9 @@ export class OpenClawChatView extends ItemView {
       await this.updateContextMeter()
       new Notice('New tab')
     } catch (err: unknown) {
-      new Notice(`Failed to create tab: ${err instanceof Error ? err.message : String(err)}`)
+      new Notice(
+        `Failed to create tab: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 
@@ -1507,7 +1513,6 @@ export class OpenClawChatView extends ItemView {
     })
     addBtn.createSpan({ text: '+', cls: 'openclaw-tab-label' })
     addBtn.addEventListener('click', () => void this.createNewTabAction())
-
   }
 
   // ─── Confirm close dialog ──────────────────────────────────────────
@@ -1576,7 +1581,6 @@ export class OpenClawChatView extends ItemView {
   }
 
   shortModelName(fullId: string): string {
-
     // "anthropic/claude-opus-4-6" -> "opus-4-6" (selected display)
     // Strip provider prefix, strip "claude-" prefix for brevity
     const model = fullId.includes('/') ? fullId.split('/')[1] : fullId
@@ -2065,8 +2069,7 @@ export class OpenClawChatView extends ItemView {
       const { label, url } = this.buildToolLabel(
         toolName,
         (payloadData?.args || payload.args) as
-          | Record<string, unknown>
-          | undefined
+          Record<string, unknown> | undefined
       )
       ss.toolCalls.push(label)
       ss.items.push({ type: 'tool', label, url } as StreamItem)
@@ -2325,7 +2328,9 @@ export class OpenClawChatView extends ItemView {
   private buildVoiceUrl(voicePath: string): string {
     // Gateway URL is ws:// or wss:// - convert to http:// or https://
     const gwUrl = this.plugin.settings.gatewayUrl || ''
-    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/$/, '')
+    const httpUrl = gwUrl
+      .replace(/^ws(s?):\/\//, 'http$1://')
+      .replace(/\/$/, '')
     const path = voicePath.startsWith('/') ? voicePath.slice(1) : voicePath
     return `${httpUrl}/${path}`
   }
@@ -2602,4 +2607,3 @@ export class OpenClawChatView extends ItemView {
     })
   }
 }
-

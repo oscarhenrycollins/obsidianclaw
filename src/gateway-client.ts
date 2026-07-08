@@ -1,10 +1,6 @@
 import { str } from './lib'
 import { generateId, buildSignaturePayload, signDevicePayload } from './crypto'
-import type {
-  GatewayClientOpts,
-  GatewayMessage,
-  GatewayPayload,
-} from './types'
+import type { GatewayClientOpts, GatewayMessage, GatewayPayload } from './types'
 
 /** Normalize a gateway URL: accepts ws://, wss://, http://, https:// and returns ws:// or wss://. Returns null if invalid. */
 export function normalizeGatewayUrl(raw: string): string | null {

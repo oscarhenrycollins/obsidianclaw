@@ -1,5 +1,9 @@
 import { Modal, Notice, Plugin } from 'obsidian'
-import { GatewayClient, isLoopbackUrl, normalizeGatewayUrl } from './gateway-client'
+import {
+  GatewayClient,
+  isLoopbackUrl,
+  normalizeGatewayUrl,
+} from './gateway-client'
 import { getOrCreateDeviceIdentity } from './crypto'
 import { OpenClawChatView, VIEW_TYPE } from './chat-view'
 import { OpenClawSettingTab } from './settings-tab'
@@ -27,10 +31,12 @@ class WelcomeModal extends Modal {
       cls: 'openclaw-onboard-desc',
     })
     const btnRow = this.contentEl.createDiv('openclaw-onboard-buttons')
-    btnRow.createEl('button', {
-      text: 'Got it',
-      cls: 'mod-cta',
-    }).addEventListener('click', () => this.close())
+    btnRow
+      .createEl('button', {
+        text: 'Got it',
+        cls: 'mod-cta',
+      })
+      .addEventListener('click', () => this.close())
   }
 }
 
@@ -279,9 +285,9 @@ export default class OpenClawPlugin extends Plugin {
       target = this.activeChatView
     } else {
       // Focus the existing leaf
-      const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE).find(
-        (l) => (l.view as OpenClawChatView) === target
-      )
+      const leaf = this.app.workspace
+        .getLeavesOfType(VIEW_TYPE)
+        .find((l) => (l.view as OpenClawChatView) === target)
       if (leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true })
     }
 
