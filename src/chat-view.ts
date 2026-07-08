@@ -506,6 +506,7 @@ export class OpenClawChatView extends ItemView {
 
   /** Reload the chat view when settings change externally (e.g. onboarding, settings tab) */
   syncFromSettings(): void {
+    this.sessionKey = this.plugin.settings.sessionKey || 'main'
     this.messages = []
     this.messagesEl.empty()
     this.streamEl = null
