@@ -759,11 +759,6 @@ export class OpenClawChatView extends ItemView {
               !m.text.startsWith('HEARTBEAT')
           )
 
-        // Hide the first user message (typically the /new or /reset system prompt)
-        if (this.messages.length > 0 && this.messages[0].role === 'user') {
-          this.messages = this.messages.slice(1)
-        }
-
         // No post-processing needed: VOICE: refs are in the assistant message text itself
 
         await this.renderMessages()
