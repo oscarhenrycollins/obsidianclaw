@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian'
-import { normalizeGatewayUrl } from './gateway-client'
+import { isLoopbackUrl, normalizeGatewayUrl } from './gateway-client'
 import type OpenClawPlugin from './main'
 
 export class OpenClawSettingTab extends PluginSettingTab {
@@ -95,6 +95,16 @@ export class OpenClawSettingTab extends PluginSettingTab {
             const normalized = normalizeGatewayUrl(value)
             this.plugin.settings.gatewayUrl = normalized || value
             await this.plugin.saveSettings()
+            if (
+              normalized &&
+              !isLoopbackUrl(normalized) &&
+              !normalized.startsWith('wss://')
+            ) {
+              new Notice(
+                'OcO: ws:// to a remote host sends your token unencrypted. Use wss:// or a private tunnel.',
+                8000
+              )
+            }
           })
       )
 

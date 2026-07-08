@@ -17,6 +17,26 @@ export function normalizeGatewayUrl(raw: string): string | null {
 }
 
 /**
+ * Check whether a normalized gateway URL points to a loopback address.
+ * This is used to warn users when they are about to send credentials over an
+ * unencrypted websocket to a remote host.
+ */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host === '[::1]'
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * Delete a session via gateway, with fallback for unprefixed store keys.
  * The gateway stores channel sessions (telegram:, discord:, etc.) without the
  * agent:main: prefix, but sessions.list returns them prefixed. Sending the

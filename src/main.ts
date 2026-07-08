@@ -1,5 +1,5 @@
 import { Modal, Notice, Plugin } from 'obsidian'
-import { GatewayClient, normalizeGatewayUrl } from './gateway-client'
+import { GatewayClient, isLoopbackUrl, normalizeGatewayUrl } from './gateway-client'
 import { getOrCreateDeviceIdentity } from './crypto'
 import { OpenClawChatView, VIEW_TYPE } from './chat-view'
 import { OpenClawSettingTab } from './settings-tab'
@@ -157,6 +157,14 @@ export default class OpenClawPlugin extends Plugin {
     if (url !== rawUrl) {
       this.settings.gatewayUrl = url
       await this.saveSettings()
+    }
+
+    // Warn when connecting to a remote host without transport encryption
+    if (!isLoopbackUrl(url) && !url.startsWith('wss://')) {
+      new Notice(
+        'OcO: Using an unencrypted websocket (ws://) to a remote host. Use wss:// or a private tunnel.',
+        8000
+      )
     }
 
     // Get or create device identity for scope authorization
