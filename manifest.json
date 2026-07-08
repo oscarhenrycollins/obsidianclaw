@@ -6,5 +6,5 @@
   "description": "OcO — OpenClaw tab for Obsidian",
   "author": "bighill",
   "authorUrl": "https://github.com/bighill",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }
