@@ -884,7 +884,7 @@ export class OpenClawChatView extends ItemView {
       }
       if (!text) {
         text = `📎 ${this.pendingAttachments.map((a) => a.name).join(', ')}`
-        fullMessage = text
+        if (!fullMessage) fullMessage = text
       }
       this.pendingAttachments = []
       this.attachPreviewEl.addClass('oc-hidden')
