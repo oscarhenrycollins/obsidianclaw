@@ -2364,8 +2364,9 @@ export class OpenClawChatView extends ItemView {
   private buildVoiceUrl(voicePath: string): string {
     // Gateway URL is ws:// or wss:// - convert to http:// or https://
     const gwUrl = this.plugin.settings.gatewayUrl || ''
-    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, 'http$1://')
-    return `${httpUrl}/${voicePath}`
+    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/$/, '')
+    const path = voicePath.startsWith('/') ? voicePath.slice(1) : voicePath
+    return `${httpUrl}/${path}`
   }
 
   /** Render an inline audio player that fetches audio via gateway HTTP */

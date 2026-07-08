@@ -208,7 +208,7 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 
 - [x] **L1 — Remove dead exports from `src/modals.ts` and `src/svgs.ts`.** Delete unused modal classes and SVG definitions, or move them to a legacy module.
 - [x] **L2 — Delete dead voice-recording methods and CSS.** Remove `startRecording`/`stopRecording`/`finishRecording` and related classes.
-- [ ] **L3 — Fix double-slash in `buildVoiceUrl`.** Normalize the slash between base URL and `voicePath`.
+- [x] **L3 — Fix double-slash in `buildVoiceUrl`.** Normalize the slash between base URL and `voicePath`.
 - [ ] **L4 — Make `extractContent` / `cleanText` filters safer.** Move gateway-specific stripping to the server, or gate behind explicit markers.
 - [ ] **L5 — Stop hiding the first user message by heuristic in `loadHistory`.** Ask the gateway to omit internal `/new` / `/reset` prompts instead.
 - [ ] **L6 — Make the esbuild copy-to-`.obsidian` step opt-in.** Avoid side effects during CI / production builds.
