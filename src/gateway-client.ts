@@ -61,7 +61,10 @@ export class GatewayClient {
   private backoffMs = 800
   private opts: GatewayClientOpts
   private connectTimer: number | null = null
+  private reconnectTimer: number | null = null
+  private reconnectAttempts = 0
   private pendingTimeouts = new Map<string, number>()
+  private static readonly MAX_RECONNECT_ATTEMPTS = 12
 
   constructor(opts: GatewayClientOpts) {
     this.opts = opts
@@ -81,6 +84,10 @@ export class GatewayClient {
     if (this.connectTimer !== null) {
       window.clearTimeout(this.connectTimer)
       this.connectTimer = null
+    }
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
     for (const [, t] of this.pendingTimeouts) window.clearTimeout(t)
     this.pendingTimeouts.clear()
@@ -130,14 +137,26 @@ export class GatewayClient {
       this.opts.onClose?.({ code: e.code, reason: e.reason || '' })
       this.scheduleReconnect()
     })
-    this.ws.addEventListener('error', () => {})
+    this.ws.addEventListener('error', (_e) => {
+      this.opts.onConnectError?.('websocket error')
+    })
   }
 
   private scheduleReconnect(): void {
     if (this.closed) return
+    if (this.reconnectAttempts >= GatewayClient.MAX_RECONNECT_ATTEMPTS) {
+      const message = `giving up after ${this.reconnectAttempts} failed connection attempts`
+      console.error('[OcO]', message)
+      this.opts.onConnectError?.(message)
+      return
+    }
     const delay = this.backoffMs
     this.backoffMs = Math.min(this.backoffMs * 1.7, 15000)
-    window.setTimeout(() => this.doConnect(), delay)
+    this.reconnectAttempts += 1
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null
+      this.doConnect()
+    }, delay)
   }
 
   private flushPending(err: Error): void {
@@ -229,6 +248,7 @@ export class GatewayClient {
     void this.request('connect', params)
       .then((payload) => {
         this.backoffMs = 800
+        this.reconnectAttempts = 0
         this.opts.onHello?.(payload as GatewayPayload)
       })
       .catch((err: unknown) => {

@@ -522,6 +522,13 @@ export class OpenClawChatView extends ItemView {
     const connected = this.plugin.gatewayConnected
     this.statusEl.addClass(connected ? 'connected' : 'disconnected')
 
+    // Surface the last connection error on hover
+    const error = this.plugin.lastGatewayConnectError
+    this.statusEl.setAttribute(
+      'title',
+      connected ? 'Connected' : error ? `Disconnected: ${error}` : 'Disconnected'
+    )
+
     // Swap send button for reconnect when disconnected
     if (connected) {
       this.sendBtn.removeClass('oc-hidden')
