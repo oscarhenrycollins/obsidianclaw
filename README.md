@@ -2,13 +2,13 @@
 
 OpenClaw tab for Obsidian
 
-Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs, no separate apps — just your notes and your AI, side by side.
+Your vault becomes the workspace. Your AI lives in a document tab. No browser tabs, no separate apps — just your notes and your AI, side by side.
 
 > **🍴 Forked from [ObsidianClaw](https://github.com/oscarhenrycollins/obsidianclaw)** by [Humanity Labs](https://humanitylabs.org). This is **OcO** — a personal fork that grew its own identity. Not affiliated with or endorsed by the original authors. Maintained by [@bighill](https://github.com/bighill). Want the official plugin? Search **OpenClaw** under **Settings → Community plugins → Browse**.
 
 ## Features
 
-- **Chat sidebar** — Talk to your AI agent from any Obsidian tab
+- **Chat tab** — Talk to your AI agent from a dedicated Obsidian tab
 - **Streaming responses** — See replies appear in real-time
 - **Markdown rendering** — Code blocks, lists, links rendered natively
 - **@-mention vault files** — Type `@` to attach any note as context
@@ -88,7 +88,7 @@ Done. The device is remembered permanently.
 
 | Command | Description |
 |---------|-------------|
-| `OcO: Toggle chat sidebar` | Open/close the chat panel |
+| `OcO: Open chat in new tab` | Open a new chat tab |
 | `OcO: Ask about current note` | Send the active note as context |
 | `OcO: Reconnect to gateway` | Re-establish the connection |
 
