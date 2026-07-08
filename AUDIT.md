@@ -206,7 +206,7 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 
 ### 🟢 Low / Informational
 
-- [ ] **L1 — Remove dead exports from `src/modals.ts` and `src/svgs.ts`.** Delete unused modal classes and SVG definitions, or move them to a legacy module.
+- [x] **L1 — Remove dead exports from `src/modals.ts` and `src/svgs.ts`.** Delete unused modal classes and SVG definitions, or move them to a legacy module.
 - [x] **L2 — Delete dead voice-recording methods and CSS.** Remove `startRecording`/`stopRecording`/`finishRecording` and related classes.
 - [ ] **L3 — Fix double-slash in `buildVoiceUrl`.** Normalize the slash between base URL and `voicePath`.
 - [ ] **L4 — Make `extractContent` / `cleanText` filters safer.** Move gateway-specific stripping to the server, or gate behind explicit markers.
