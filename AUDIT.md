@@ -194,15 +194,15 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 
 ### 🟡 Medium
 
-- [ ] **M1 — Stop tracking the generated `main.js` artifact in Git.** Run `git rm --cached main.js` and rely on CI/release assets.
-- [ ] **M2 — Fix `ConfirmCloseModal` promise hang on Escape / overlay click.** Resolve the promise in `onClose()` when the button callback has not already fired.
-- [ ] **M3 — Fix `syncFromSettings()` to honor a changed `sessionKey`.** Set `this.sessionKey = this.plugin.settings.sessionKey || 'main'` before reloading history.
-- [ ] **M4 — Align README / manifest / code descriptions.** Remove stale “sidebar” wording and match command names to the actual registered commands.
-- [ ] **M5 — Harden `GatewayClient` reconnect behavior.** Store reconnect timer IDs so `stop()` can clear them, surface connection errors in the UI, and cap retry attempts.
-- [ ] **M6 — Add transport-security UI warnings for remote gateway URLs.** Warn when the URL is non-loopback and not `wss://`; default remote hosts to `wss://`.
-- [ ] **M7 — Cap `askAboutNote` content size and trigger input resize.** Avoid inserting arbitrarily large notes and failing to auto-resize the textarea.
+- [x] **M1 — Stop tracking the generated `main.js` artifact in Git.** Run `git rm --cached main.js` and rely on CI/release assets.
+- [x] **M2 — Fix `ConfirmCloseModal` promise hang on Escape / overlay click.** Resolve the promise in `onClose()` when the button callback has not already fired.
+- [x] **M3 — Fix `syncFromSettings()` to honor a changed `sessionKey`.** Set `this.sessionKey = this.plugin.settings.sessionKey || 'main'` before reloading history.
+- [x] **M4 — Align README / manifest / code descriptions.** Remove stale “sidebar” wording and match command names to the actual registered commands.
+- [x] **M5 — Harden `GatewayClient` reconnect behavior.** Store reconnect timer IDs so `stop()` can clear them, surface connection errors in the UI, and cap retry attempts.
+- [x] **M6 — Add transport-security UI warnings for remote gateway URLs.** Warn when the URL is non-loopback and not `wss://`; default remote hosts to `wss://`.
+- [x] **M7 — Cap `askAboutNote` content size and trigger input resize.** Avoid inserting arbitrarily large notes and failing to auto-resize the textarea.
 - [x] **M8 — Refactor `chat-view.ts` and remove dead code.** Deduplicate tab-action logic into the existing private methods and delete unused recording/reset/context methods.
-- [ ] **M9 — Complete or remove `streamItemsMap` persistence.** Either restore persisted stream items on tab switch/view load, or delete the field.
+- [x] **M9 — Complete or remove `streamItemsMap` persistence.** Either restore persisted stream items on tab switch/view load, or delete the field.
 
 ### 🟢 Low / Informational
 

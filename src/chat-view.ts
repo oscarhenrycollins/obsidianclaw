@@ -1294,8 +1294,6 @@ export class OpenClawChatView extends ItemView {
       this.hideBanner()
 
       this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
-      if (this.plugin.settings.streamItemsMap)
-        this.plugin.settings.streamItemsMap = {}
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -2195,28 +2193,13 @@ export class OpenClawChatView extends ItemView {
         }
       }
     } else if (chatState === 'final') {
-      const items = ss ? [...ss.items] : []
       this.finishStream(eventSessionKey)
 
       if (isActiveTab) {
         void this.loadHistory().then(async () => {
           await this.renderMessages()
           void this.updateContextMeter()
-          if (items.length > 0) {
-            const lastAssistant = [...this.messages]
-              .reverse()
-              .find((m) => m.role === 'assistant')
-            if (lastAssistant) {
-              const key = String(lastAssistant.timestamp)
-              if (!this.plugin.settings.streamItemsMap)
-                this.plugin.settings.streamItemsMap = {}
-              this.plugin.settings.streamItemsMap[key] = items
-              void this.plugin.saveSettings()
-            }
-          }
         })
-      } else {
-        // Not active tab: just clean up, history will load when user switches to it
       }
     } else if (chatState === 'aborted') {
       if (isActiveTab && ss?.text) {

@@ -20,8 +20,6 @@ export interface OpenClawSettings {
   deviceId?: string
   devicePublicKey?: string
   devicePrivateKey?: string
-  /** Persisted stream items (tool calls + intermediary text) keyed by assistant message index */
-  streamItemsMap?: Record<string, StreamItem[]>
   /** Saved tab order (non-Home tab keys) */
   tabOrder?: string[]
   /** Suppress the close/reset confirmation modal when true. */
