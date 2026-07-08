@@ -185,6 +185,10 @@ export default class OpenClawPlugin extends Plugin {
         '[OcO] Device identity creation failed, connecting without scopes:',
         e
       )
+      new Notice(
+        'OcO: Could not create device identity. Device pairing will not be available.',
+        8000
+      )
     }
 
     this.gateway = new GatewayClient({

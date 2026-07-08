@@ -2,7 +2,7 @@
   "id": "openclaw",
   "name": "OcO",
   "version": "0.42.0",
-  "minAppVersion": "1.0.0",
+  "minAppVersion": "1.5.0",
   "description": "OcO — OpenClaw tab for Obsidian",
   "author": "bighill",
   "authorUrl": "https://github.com/bighill",
