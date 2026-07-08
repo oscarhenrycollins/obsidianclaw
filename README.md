@@ -30,15 +30,24 @@ Before you install the plugin, you'll need:
 
 Obsidian's renderer loads from `app://obsidian.md`. Per the URL spec, custom schemes have a "null" origin, so vanilla OpenClaw rejects the websocket handshake from Obsidian. This plugin needs a one-line fallback added to OpenClaw's origin check.
 
-Run this on your **gateway machine**:
+Apply the patch manually on your **gateway machine**:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash
-```
+1. Download and review [`scripts/patch-openclaw.sh`](scripts/patch-openclaw.sh):
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh -o /tmp/patch-openclaw.sh
+   # Review the file before running it as root
+   cat /tmp/patch-openclaw.sh
+   ```
+2. Run it with `sudo`:
+   ```bash
+   sudo bash /tmp/patch-openclaw.sh
+   ```
 
-The script is idempotent, backs up the file it edits, and restarts the gateway. Review it first: [`scripts/patch-openclaw.sh`](scripts/patch-openclaw.sh).
+The script is idempotent, backs up the file it edits, and restarts the gateway.
 
 > ⚠️ **Re-run this after every `openclaw update`** — gateway upgrades wipe the patch. We're tracking an upstream fix so this requirement can be removed.
+
+> 🔒 Never pipe a remote script directly into `sudo bash`. Always download, inspect, and run locally.
 
 ## Install
 
