@@ -215,7 +215,7 @@ Code-quality debt is also significant: `src/chat-view.ts` is a ~3,000-line monol
 - [x] **L7 — Consider setting `isDesktopOnly: true` in `manifest.json`.** Mobile requires a remote gateway and the same origin patch.
 - [x] **L8 — Enforce Prettier in CI.** Install `prettier` and add a format check; align test-file quote style with `.prettierrc`.
 - [x] **L9 — Review `minAppVersion` for WebCrypto Ed25519 support.** Raise it or surface a notice when device identity creation fails.
-- [ ] **L10 — Cancel the `WelcomeModal` timer in `onunload`.** Prevent detached modals on rapid plugin disable.
+- [x] **L10 — Cancel the `WelcomeModal` timer in `onunload`.** Prevent detached modals on rapid plugin disable.
 - [ ] **L11 — Update `AGENTS.md` to reflect the existing test suite.** It currently says there is no test suite.
 
 ---

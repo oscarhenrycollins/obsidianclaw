@@ -54,6 +54,7 @@ export default class OpenClawPlugin extends Plugin {
   // gateway is rejecting our origin during the websocket handshake.
   private handshakeFailuresInARow = 0
   private patchHintShownThisSession = false
+  private welcomeTimer: number | null = null
 
   /** Register an open chat view so gateway events can reach it. */
   registerChatView(view: OpenClawChatView): void {
@@ -111,13 +112,20 @@ export default class OpenClawPlugin extends Plugin {
 
     // Show welcome on first run; otherwise auto-connect only (no auto-open)
     if (!this.settings.gatewayUrl) {
-      window.setTimeout(() => new WelcomeModal(this.app).open(), 500)
+      this.welcomeTimer = window.setTimeout(
+        () => new WelcomeModal(this.app).open(),
+        500
+      )
     } else {
       void this.connectGateway()
     }
   }
 
   onunload(): void {
+    if (this.welcomeTimer !== null) {
+      window.clearTimeout(this.welcomeTimer)
+      this.welcomeTimer = null
+    }
     this.gateway?.stop()
     this.gateway = null
     this.gatewayConnected = false
