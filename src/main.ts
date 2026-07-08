@@ -290,13 +290,23 @@ export default class OpenClawPlugin extends Plugin {
       return
     }
 
-    const message = `Here is my current note "${file.basename}":\n\n${content}\n\nWhat can you tell me about this?`
+    const MAX_NOTE_CHARS = 12000
+    const trimmedContent =
+      content.length > MAX_NOTE_CHARS
+        ? content.slice(0, MAX_NOTE_CHARS) +
+          '\n\n[Note truncated: exceeds size limit]'
+        : content
+
+    const message = `Here is my current note "${file.basename}":\n\n${trimmedContent}\n\nWhat can you tell me about this?`
     const inputEl = target.containerEl.querySelector(
       '.openclaw-input'
     ) as HTMLTextAreaElement
     if (inputEl) {
       inputEl.value = message
       inputEl.focus()
+      // Trigger the input handler so the textarea auto-resizes and the send
+      // button reflects the new content.
+      inputEl.dispatchEvent(new Event('input'))
     }
   }
 }
