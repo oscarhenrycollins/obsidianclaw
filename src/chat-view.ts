@@ -9,7 +9,7 @@ import {
   WorkspaceLeaf,
   setIcon,
 } from 'obsidian'
-import { str, imageMimeFromExt } from './lib'
+import { str, imageMimeFromExt, safeGatewayUrl } from './lib'
 import {
   classifyFile,
   formatTextAttachment,
@@ -2252,11 +2252,11 @@ export class OpenClawChatView extends ItemView {
       }
       case 'web_fetch': {
         const rawUrl = str(a?.url)
-        try {
-          const domain = new URL(rawUrl).hostname
-          return { label: `🌐 Fetching ${domain}`, url: rawUrl }
-        } catch {
-          return { label: `🌐 Fetching page`, url: rawUrl || undefined }
+        const safeUrl = safeGatewayUrl(rawUrl)
+        const domain = safeUrl ? new URL(safeUrl).hostname : ''
+        return {
+          label: `🌐 Fetching ${domain || 'page'}`,
+          url: safeUrl || undefined,
         }
       }
       case 'browser':
@@ -2289,15 +2289,16 @@ export class OpenClawChatView extends ItemView {
     const el = createDiv({
       cls: 'openclaw-tool-item' + (active ? ' openclaw-tool-active' : ''),
     })
-    if (url) {
+    const safeUrl = url ? safeGatewayUrl(url) : null
+    if (safeUrl) {
       const link = el.createEl('a', {
         text: label,
-        href: url,
+        href: safeUrl,
         cls: 'openclaw-tool-link',
       })
       link.addEventListener('click', (e) => {
         e.preventDefault()
-        window.open(url, '_blank')
+        window.open(safeUrl, '_blank')
       })
     } else {
       el.createSpan({ text: label })
@@ -2655,15 +2656,16 @@ export class OpenClawChatView extends ItemView {
   private createStreamItemEl(item: StreamItem): HTMLElement {
     if (item.type === 'tool') {
       const el = createDiv({ cls: 'openclaw-tool-item' })
-      if (item.url) {
+      const safeUrl = item.url ? safeGatewayUrl(item.url) : null
+      if (safeUrl) {
         const link = el.createEl('a', {
           text: item.label,
-          href: item.url,
+          href: safeUrl,
           cls: 'openclaw-tool-link',
         })
         link.addEventListener('click', (e) => {
           e.preventDefault()
-          window.open(item.url, '_blank')
+          window.open(safeUrl, '_blank')
         })
       } else {
         el.textContent = item.label
